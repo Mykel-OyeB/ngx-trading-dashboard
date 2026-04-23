@@ -1,13 +1,14 @@
 # app.py
 # NGX Trading Dashboard - Main Streamlit Application
-# View this daily at your Streamlit URL
+# ✅ FIXED: Added missing numpy import
 
 import streamlit as st
 import pandas as pd
+import numpy as np  # ← THIS WAS MISSING - NOW ADDED
 import plotly.express as px
 from datetime import datetime
 from data_engine import generate_ngx_signals, get_portfolio_metrics, get_fx_risk_alert
-from config import DASHBOARD_REFRESH_MINUTES
+from config import DASHBOARD_REFRESH_MINUTES, ALERT_PROBABILITY_THRESHOLD
 
 # Page configuration - Mobile optimized
 st.set_page_config(
@@ -53,7 +54,7 @@ tab1, tab2, tab3 = st.tabs(["🎯 Today's Signals", "📈 Performance", "⚙️ 
 
 # TAB 1: LIVE SIGNALS
 with tab1:
-    st.subheader("🟢 Buy Signals - April 22, 2026")
+    st.subheader("🟢 Buy Signals - " + datetime.now().strftime("%B %d, %Y"))
     
     # Filter buy signals
     buy_signals = signals_df[signals_df["Signal"] == "BUY"].copy()
@@ -88,7 +89,7 @@ with tab2:
     
     # Generate mock equity curve for demo
     dates = pd.date_range(start="2023-01-01", periods=100, freq="B")
-    np.random.seed(42)
+    np.random.seed(42)  # ✅ Now works because numpy is imported
     strategy_returns = np.cumprod(1 + np.random.normal(0.0006, 0.015, 100))
     benchmark_returns = np.cumprod(1 + np.random.normal(0.0003, 0.018, 100))
     
