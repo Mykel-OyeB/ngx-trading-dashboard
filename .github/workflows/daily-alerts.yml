@@ -21,10 +21,12 @@ jobs:
       with:
         python-version: '3.11'
 
+    # 🔧 FIX: Added yfinance to the installation list
     - name: Install dependencies
-      run: pip install pandas numpy requests
+      run: |
+        pip install pandas numpy requests yfinance
 
-    # 🔍 SAFE VERIFICATION STEP (Does NOT leak secrets)
+    # 🔍 Verification Step (Safe)
     - name: Verify GitHub Secrets
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -32,14 +34,14 @@ jobs:
       run: |
         echo "=== SECRET VERIFICATION ==="
         if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
-          echo "❌ TELEGRAM_BOT_TOKEN is MISSING or EMPTY"
+          echo "❌ TELEGRAM_BOT_TOKEN is MISSING"
         else
-          echo "✅ TELEGRAM_BOT_TOKEN is present (length: ${#TELEGRAM_BOT_TOKEN})"
+          echo "✅ TELEGRAM_BOT_TOKEN is present"
         fi
         if [ -z "$TELEGRAM_CHAT_ID" ]; then
-          echo "❌ TELEGRAM_CHAT_ID is MISSING or EMPTY"
+          echo "❌ TELEGRAM_CHAT_ID is MISSING"
         else
-          echo "✅ TELEGRAM_CHAT_ID is present (length: ${#TELEGRAM_CHAT_ID})"
+          echo "✅ TELEGRAM_CHAT_ID is present"
         fi
         echo "==========================="
 
