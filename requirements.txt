@@ -1,6 +1,6 @@
-# requirements.txt - Streamlit Cloud Compatible
 streamlit
 pandas
 numpy
 plotly
 requests
+yfinance
