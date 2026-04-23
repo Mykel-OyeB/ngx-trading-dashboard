@@ -1,114 +1,77 @@
-# alerts.py
-# ✅ FIXED: Now reads Telegram credentials from GitHub Secrets (environment variables)
-
+# alerts.py - TELEGRAM + EMAIL ALERTS
 import requests
-import os  # ← Added to read environment variables
+import smtplib
+import os
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 from data_engine import generate_ngx_signals, get_fx_risk_alert
 
-def send_telegram_alert():
-    """Send daily NGX trading signals to Telegram"""
-    
-    # ✅ Read from GitHub Secrets (environment variables) FIRST
-    # Fallback to config.py only for local testing
-    BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-    CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-    
-    # If not in environment, try config.py (for local testing)
-    if not BOT_TOKEN or not CHAT_ID:
-        try:
-            from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-            BOT_TOKEN = BOT_TOKEN if BOT_TOKEN != "YOUR_BOT_TOKEN_HERE" else None
-            CHAT_ID = CHAT_ID if CHAT_ID != "YOUR_CHAT_ID_HERE" else None
-        except:
-            pass
-    
-    # Final check
-    if not BOT_TOKEN:
-        print("⚠️  ERROR: Telegram bot token not configured!")
-        print("Please add TELEGRAM_BOT_TOKEN to GitHub Secrets")
+def send_telegram_alert(message):
+    """Send to Telegram"""
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        print("⚠️ Telegram credentials missing")
         return
-    
-    if not CHAT_ID:
-        print("⚠️  ERROR: Telegram chat ID not configured!")
-        print("Please add TELEGRAM_CHAT_ID to GitHub Secrets")
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    try:
+        requests.post(url, json={"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}, timeout=15)
+        print("✅ Telegram alert sent")
+    except Exception as e:
+        print(f"❌ Telegram error: {e}")
+
+def send_email_alert(subject, html_body):
+    """Send to Email (Gmail)"""
+    email_user = os.getenv("EMAIL_USER")
+    email_pass = os.getenv("EMAIL_APP_PASSWORD")
+    if not email_user or not email_pass:
+        print("⚠️ Email credentials missing")
         return
-    
-    # Generate signals
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = email_user
+        msg['To'] = email_user
+        msg['Subject'] = subject
+        msg.attach(MIMEText(html_body, 'html'))
+        
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+        server.login(email_user, email_pass)
+        server.send_message(msg)
+        server.quit()
+        print("✅ Email alert sent")
+    except Exception as e:
+        print(f"❌ Email error: {e}")
+
+def run_alerts():
+    print("🚀 Generating NGX Alerts...")
     signals_df = generate_ngx_signals()
     fx_risk = get_fx_risk_alert()
     
-    # Filter high-conviction buy signals
-    ALERT_THRESHOLD = 0.55  # 55% minimum strength
-    buy_signals = signals_df[
-        (signals_df["Signal"] == "BUY") & 
-        (signals_df["Strength(%)"] >= ALERT_THRESHOLD * 100)
-    ].sort_values("Strength(%)", ascending=False)
+    # Build message
+    title = f"🇳🇬 NGX SIGNALS - {datetime.now().strftime('%b %d, %Y')}"
+    telegram_msg = f"*{title}*\n\n"
+    email_html = f"<h2>{title}</h2>"
     
-    # Build alert message
-    message = f"""🇳🇬 *NGX DAILY TRADING SIGNALS*
-📅 {datetime.now().strftime('%A, %B %d, %Y')}
-⏰ {datetime.now().strftime('%H:%M')} WAT
-
-━━━━━━━━━━━━━━━━━━━━
-"""
-    
-    # Add buy signals
-    if len(buy_signals) > 0:
-        message += "🟢 *TOP BUY SIGNALS:*\n\n"
-        
-        for idx, (_, row) in enumerate(buy_signals.head(5).iterrows(), 1):
-            message += f"{idx}. *{row['Ticker']}* - {row['Company']}\n"
-            message += f"   💰 Entry: ₦{row['Price(₦)']:,.2f}\n"
-            message += f"   📊 Strength: {row['Strength(%)']}%\n"
-            message += f"   🛑 Stop: ₦{row['Stop_Loss']:,.2f}\n"
-            message += f"   🎯 Target: ₦{row['Take_Profit']:,.2f}\n\n"
+    if signals_df.empty:
+        telegram_msg += "⏸️ No signals meet threshold today."
+        email_html += "<p>No signals meet threshold today.</p>"
     else:
-        message += "⏸️ *No high-conviction buy signals today*\n\n"
-        message += "Market conditions don't meet our criteria.\n"
-        message += "Stay patient and preserve capital.\n\n"
-    
-    # Add FX risk warning
-    if fx_risk["alert"]:
-        message += "⚠️ *FX RISK ALERT*\n"
-        message += f"{fx_risk['message']}\n"
-        message += "Consider reducing equity exposure by 20%.\n\n"
-    
-    # Add dashboard link
-    message += "━━━━━━━━━━━━━━━━━━━━\n"
-    message += "📊 *View Full Dashboard:*\n"
-    message += "https://your-app.streamlit.app\n\n"
-    message += "⚡ *Quick Actions:*\n"
-    message += "• Use LIMIT orders only\n"
-    message += "• Max 5% position size\n"
-    message += "• Set hard stop-loss at -7%\n"
-    message += "• Scale out at +15%, +20%, +25%\n\n"
-    message += "_Model: XGBoost Classifier | Threshold: 55%_"
-    
-    # Send to Telegram
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown",
-        "disable_web_page_preview": True
-    }
-    
-    try:
-        response = requests.post(url, json=payload, timeout=30)
-        
-        if response.status_code == 200:
-            print("✅ Alert sent successfully to Telegram!")
-            print(f"Sent {len(buy_signals)} buy signals")
-        else:
-            print(f"❌ Telegram API Error: {response.status_code}")
-            print(f"Response: {response.text}")
+        for _, row in signals_df.head(5).iterrows():
+            line = f"• *{row['Ticker']}* ₦{row['Price(₦)']} | {row['Strength(%)']}%\n"
+            telegram_msg += line
+            email_html += f"<p><b>{row['Ticker']}</b> ₦{row['Price(₦)']} | {row['Strength(%)']}%<br>SL: ₦{row['Stop_Loss']} | TP: ₦{row['Take_Profit']}</p>"
             
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Failed to send alert: {e}")
+    if fx_risk["alert"]:
+        warn = f"\n⚠️ FX RISK: {fx_risk['message']}"
+        telegram_msg += warn
+        email_html += f"<p style='color:red'>{warn}</p>"
+        
+    telegram_msg += "\n📊 Dashboard: [Your Streamlit URL]"
+    email_html += "<br><a href='[Your Streamlit URL]'>View Live Dashboard</a>"
+    
+    send_telegram_alert(telegram_msg)
+    send_email_alert(title, email_html)
 
-# Run the alert
 if __name__ == "__main__":
-    print("🚀 Starting NGX Daily Alert System...")
-    print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    send_telegram_alert()
+    run_alerts()
