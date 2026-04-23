@@ -78,10 +78,15 @@ st.sidebar.info("📱 Add to Home Screen:\nSafari/Chrome → Share → Add to Ho
 # ================= TABS =================
 tab1, tab2, tab3, tab4 = st.tabs(["🎯 Today's Signals", "📈 Performance", "⚙️ Risk & Settings", "💼 Live Portfolio"])
 
-# TAB 1: SIGNALS (Unchanged)
+# TAB 1: SIGNALS (Bulletproof Version)
 with tab1:
     st.subheader("🟢 Buy Signals - " + datetime.now().strftime("%B %d, %Y"))
-    buy_signals = signals_df[signals_df["Signal"] == "BUY"].copy()
+    
+    # ✅ Safe filtering: prevents KeyError if yfinance returns empty/mismatched data
+    if "Signal" in signals_df.columns and not signals_df.empty:
+        buy_signals = signals_df[signals_df["Signal"] == "BUY"].copy()
+    else:
+        buy_signals = pd.DataFrame()
     
     if not buy_signals.empty:
         st.dataframe(
@@ -99,7 +104,7 @@ with tab1:
                 st.metric(row["Ticker"], f"₦{row['Price(₦)']}", f"{row['Strength(%)']}%")
                 st.caption(f"SL: ₦{row['Stop_Loss']} | TP: ₦{row['Take_Profit']}")
     else:
-        st.info("⏸️ No buy signals meet threshold today. Stay patient.")
+        st.info("⏸️ No buy signals available right now. Market data is refreshing...")
 
 # TAB 2: PERFORMANCE (Unchanged)
 with tab2:
