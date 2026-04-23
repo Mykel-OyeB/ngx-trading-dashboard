@@ -11,14 +11,13 @@ def calculate_rsi(series, period=14):
     delta = series.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / (loss + 1e-10)  # Prevent division by zero
+    rs = gain / (loss + 1e-10)
     return 100 - (100 / (1 + rs))
 
 def generate_ngx_signals():
     """Fetches live NGX data & calculates real technical signals"""
     today = datetime.now()
     
-    # NGX 30 tickers (Yahoo Finance suffix: .LG = Lagos Exchange)
     tickers = [
         "ARADEL.LG", "ZENITHBANK.LG", "BUACEMENT.LG", "MTNN.LG", "NESTLE.NG",
         "LAFARGE.LG", "SEPLAT.LG", "GTCO.LG", "STANBIC.LG", "ACCESSCORP.LG",
@@ -30,7 +29,6 @@ def generate_ngx_signals():
     
     for ticker in tickers:
         try:
-            # Fetch 90 days of live data
             df = yf.download(ticker, period="3mo", progress=False, auto_adjust=True)
             if df.empty or len(df) < 50:
                 continue
@@ -38,23 +36,19 @@ def generate_ngx_signals():
             close = df['Close']
             volume = df['Volume']
             
-            # Technical Indicators
             sma20 = close.rolling(20).mean()
             sma50 = close.rolling(50).mean()
             rsi = calculate_rsi(close)
             
-            # MACD
             ema12 = close.ewm(span=12, adjust=False).mean()
             ema26 = close.ewm(span=26, adjust=False).mean()
             macd = ema12 - ema26
             signal_line = macd.ewm(span=9, adjust=False).mean()
             macd_hist = macd - signal_line
             
-            # Latest values
             price = close.iloc[-1]
             vol_avg = volume.rolling(20).mean().iloc[-1]
             
-            # Signal Logic (Scoring 0-100)
             score = 0
             reasons = []
             
@@ -80,7 +74,7 @@ def generate_ngx_signals():
             score = min(100, score)
             signal_type = "BUY" if score >= 60 else "WATCH"
             
-            if score >= 50:  # Show WATCH & BUY
+            if score >= 50:
                 signals.append({
                     "Ticker": ticker.replace(".LG", "").replace(".NG", ""),
                     "Company": ticker.replace(".LG", "").replace(".NG", "").replace("MTNN", "MTN Nigeria"),
@@ -93,13 +87,17 @@ def generate_ngx_signals():
                     "Reasons": ", ".join(reasons)
                 })
                 
-            time.sleep(0.5)  # Prevent rate limits
-            
+            time.sleep(0.5)
         except Exception:
             continue
             
     df_signals = pd.DataFrame(signals)
-    return df_signals.sort_values("Strength(%)", ascending=False) if not df_signals.empty else pd.DataFrame()
+    
+    # 🔧 FIX: Force exact column structure so Streamlit never crashes
+    expected_cols = ["Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", "Stop_Loss", "Take_Profit", "Date", "Reasons"]
+    if df_signals.empty:
+        return pd.DataFrame(columns=expected_cols)
+    return df_signals[expected_cols].sort_values("Strength(%)", ascending=False)
 
 def get_portfolio_metrics():
     return {
@@ -112,5 +110,4 @@ def get_portfolio_metrics():
     }
 
 def get_fx_risk_alert():
-    # Simple FX monitor (replace with CBN API later)
     return {"change_pct": 0.012, "alert": False, "message": "USD/NGN stable this week"}
