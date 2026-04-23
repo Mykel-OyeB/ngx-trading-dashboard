@@ -1,24 +1,37 @@
 # alerts.py
-# Automated Telegram Alert System
-# Runs daily at 8:00 AM WAT via GitHub Actions
+# ✅ FIXED: Now reads Telegram credentials from GitHub Secrets (environment variables)
 
 import requests
+import os  # ← Added to read environment variables
 from datetime import datetime
 from data_engine import generate_ngx_signals, get_fx_risk_alert
-from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, ALERT_PROBABILITY_THRESHOLD
 
 def send_telegram_alert():
     """Send daily NGX trading signals to Telegram"""
     
-    # Check if configured
-    if TELEGRAM_BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
+    # ✅ Read from GitHub Secrets (environment variables) FIRST
+    # Fallback to config.py only for local testing
+    BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+    CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+    
+    # If not in environment, try config.py (for local testing)
+    if not BOT_TOKEN or not CHAT_ID:
+        try:
+            from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+            BOT_TOKEN = BOT_TOKEN if BOT_TOKEN != "YOUR_BOT_TOKEN_HERE" else None
+            CHAT_ID = CHAT_ID if CHAT_ID != "YOUR_CHAT_ID_HERE" else None
+        except:
+            pass
+    
+    # Final check
+    if not BOT_TOKEN:
         print("⚠️  ERROR: Telegram bot token not configured!")
-        print("Please add your TELEGRAM_BOT_TOKEN to GitHub Secrets")
+        print("Please add TELEGRAM_BOT_TOKEN to GitHub Secrets")
         return
     
-    if TELEGRAM_CHAT_ID == "YOUR_CHAT_ID_HERE":
+    if not CHAT_ID:
         print("⚠️  ERROR: Telegram chat ID not configured!")
-        print("Please add your TELEGRAM_CHAT_ID to GitHub Secrets")
+        print("Please add TELEGRAM_CHAT_ID to GitHub Secrets")
         return
     
     # Generate signals
@@ -26,9 +39,10 @@ def send_telegram_alert():
     fx_risk = get_fx_risk_alert()
     
     # Filter high-conviction buy signals
+    ALERT_THRESHOLD = 0.55  # 55% minimum strength
     buy_signals = signals_df[
         (signals_df["Signal"] == "BUY") & 
-        (signals_df["Strength(%)"] >= ALERT_PROBABILITY_THRESHOLD * 100)
+        (signals_df["Strength(%)"] >= ALERT_THRESHOLD * 100)
     ].sort_values("Strength(%)", ascending=False)
     
     # Build alert message
@@ -60,10 +74,10 @@ def send_telegram_alert():
         message += f"{fx_risk['message']}\n"
         message += "Consider reducing equity exposure by 20%.\n\n"
     
-    # Add dashboard link (replace with your actual Streamlit URL)
+    # Add dashboard link
     message += "━━━━━━━━━━━━━━━━━━━━\n"
     message += "📊 *View Full Dashboard:*\n"
-    message += "https://your-username-ngx-trading-dashboard.streamlit.app\n\n"
+    message += "https://your-app.streamlit.app\n\n"
     message += "⚡ *Quick Actions:*\n"
     message += "• Use LIMIT orders only\n"
     message += "• Max 5% position size\n"
@@ -72,9 +86,9 @@ def send_telegram_alert():
     message += "_Model: XGBoost Classifier | Threshold: 55%_"
     
     # Send to Telegram
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
+        "chat_id": CHAT_ID,
         "text": message,
         "parse_mode": "Markdown",
         "disable_web_page_preview": True
@@ -92,7 +106,6 @@ def send_telegram_alert():
             
     except requests.exceptions.RequestException as e:
         print(f"❌ Failed to send alert: {e}")
-        print("Check your internet connection and Telegram bot settings")
 
 # Run the alert
 if __name__ == "__main__":
