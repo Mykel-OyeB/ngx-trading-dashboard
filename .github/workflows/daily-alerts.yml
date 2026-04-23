@@ -3,7 +3,11 @@ name: Daily NGX Alerts
 on:
   schedule:
     - cron: '0 7 * * 1-5'  # 8:00 AM WAT on weekdays
-  workflow_dispatch:       # Allows manual trigger
+  workflow_dispatch:       # Manual trigger button
+
+# ✅ Force Node.js 24 to eliminate deprecation warning
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   send-signals:
@@ -11,10 +15,10 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4  # ✅ Updated from v3 to v4
+      uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/setup-python@v5  # ✅ Updated from v4 to v5
+      uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
