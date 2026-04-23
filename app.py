@@ -19,7 +19,7 @@ st.set_page_config(
 )
 
 # 🔗 PASTE YOUR PUBLISHED GOOGLE SHEETS CSV LINK BELOW:
-SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1V2GumgyU4sVrsrulu8F5v2rpH9dU2M8Grn5qVd7omTR9sHntQvXH0WS7u9Eg7lqydndDsZnU6dLA/pub?output=csv"
+SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1V2GumgyU4sVrsrulu8F5v2rpH9dU2M8Grn5qVd7omTR9sHntQvXH0WS7u9Eg7lqydndDsZnU6dLA/pubhtml"
 
 # ================= DATA LOADER =================
 @st.cache_data(ttl=1800)  # Refreshes every 30 mins
