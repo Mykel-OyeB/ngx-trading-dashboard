@@ -18,7 +18,7 @@ def fetch_ngx_data(ticker):
     """Fetches OHLCV from TwelveData (Free tier: 800 req/day)"""
     api_key = os.getenv("TWELVEDATA_API_KEY")
     if not api_key:
-        return pd.DataFrame()  # Triggers graceful fallback in main loop
+        return pd.DataFrame()  # Triggers graceful fallback
         
     url = f"https://api.twelvedata.com/time_series?symbol={ticker}.NGX&interval=1day&outputsize=90&apikey={api_key}"
     try:
@@ -26,7 +26,8 @@ def fetch_ngx_data(ticker):
         data = res.json()
         if "status" in data and data["status"] == "error":
             return pd.DataFrame()
-        if "values" in 
+        # ✅ FIXED: Added missing "data:" 
+        if "values" in data:
             df = pd.DataFrame(data["values"])
             df = df.iloc[::-1].reset_index(drop=True)  # Chronological order
             df["datetime"] = pd.to_datetime(df["datetime"])
