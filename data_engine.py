@@ -1,6 +1,4 @@
-# data_engine.py - LIVE NGX DATA ENGINE (TwelveData)
-# ✅ SAFE SYNTAX: Uses .get() to prevent copy-paste corruption
-
+# data_engine.py - Using MarketStack API
 import os
 import requests
 import pandas as pd
@@ -20,33 +18,28 @@ def calculate_rsi(series, period=14):
 def get_api_key():
     try:
         import streamlit as st
-        return st.secrets.get("TWELVEDATA_API_KEY")
-    except Exception:
-        return os.getenv("TWELVEDATA_API_KEY")
+        return st.secrets.get("MARKETSTACK_API_KEY")
+    except:
+        return os.getenv("MARKETSTACK_API_KEY")
 
 def fetch_ngx_data(ticker, api_key):
-    formats = [ticker, f"{ticker}.NG", f"{ticker}.NGX"]
+    # MarketStack format: ticker.XNGS (NGX)
+    url = f"http://api.marketstack.com/v1/eod?access_key={api_key}&symbols={ticker}.XNGS&limit=90"
     
-    for fmt in formats:
-        url = f"https://api.twelvedata.com/time_series?symbol={fmt}&interval=1day&outputsize=60&apikey={api_key}"
-        try:
-            res = requests.get(url, timeout=10)
-            data = res.json()
+    try:
+        res = requests.get(url, timeout=10)
+        data = res.json()
+        
+        if "data" not in data or not data["data"]:
+            return pd.DataFrame()
             
-            if data.get("status") == "error":
-                continue
-                
-            # ✅ SAFE LINE: Replaces the problematic 'if "values" in data:'
-            values = data.get("values")
-            if values:
-                df = pd.DataFrame(values)
-                df = df.iloc[::-1].reset_index(drop=True)
-                df["Close"] = pd.to_numeric(df["close"])
-                df["Volume"] = pd.to_numeric(df["volume"])
-                return df[["Close", "Volume"]]
-        except Exception:
-            continue
-    return pd.DataFrame()
+        df = pd.DataFrame(data["data"])
+        df = df.iloc[::-1].reset_index(drop=True)
+        df["Close"] = pd.to_numeric(df["close"])
+        df["Volume"] = pd.to_numeric(df["volume"])
+        return df[["Close", "Volume"]]
+    except Exception:
+        return pd.DataFrame()
 
 def generate_ngx_signals():
     api_key = get_api_key()
@@ -66,7 +59,7 @@ def generate_ngx_signals():
         df = fetch_ngx_data(ticker, api_key)
         if df.empty or len(df) < 20:
             fetch_log.append(f"{ticker}: ❌")
-            time.sleep(8)
+            time.sleep(0.5)
             continue
             
         fetch_log.append(f"{ticker}: ✅")
@@ -107,7 +100,7 @@ def generate_ngx_signals():
             "Date": datetime.now().strftime("%Y-%m-%d"),
             "Reasons": ", ".join(reasons)
         })
-        time.sleep(8)
+        time.sleep(0.5)
         
     df_signals = pd.DataFrame(signals)
     expected_cols = ["Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", "Stop_Loss", "Take_Profit", "Date", "Reasons"]
@@ -119,7 +112,7 @@ def generate_ngx_signals():
     return df_signals[expected_cols].sort_values("Strength(%)", ascending=False), status_msg
 
 def get_portfolio_metrics():
-    return {"Total Return": "Live Tracking", "CAGR": "Pending", "Sharpe Ratio": "Pending", "Max Drawdown": "Live", "Win Rate": "Tracking", "Data Source": "TwelveData (NGX Live)"}
+    return {"Total Return": "Live Tracking", "CAGR": "Pending", "Sharpe Ratio": "Pending", "Max Drawdown": "Live", "Win Rate": "Tracking", "Data Source": "MarketStack (NGX)"}
 
 def get_fx_risk_alert():
     return {"change_pct": 0.012, "alert": False, "message": "USD/NGN stable this week"}
