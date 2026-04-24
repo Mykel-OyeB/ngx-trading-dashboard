@@ -1,5 +1,5 @@
 # data_engine.py - LIVE NGX DATA ENGINE (TwelveData)
-# ✅ Returns all fetched stocks + status tracking for debugging
+# ✅ Syntax verified & rate-limit protected
 
 import os
 import requests
@@ -25,8 +25,6 @@ def get_api_key():
         return os.getenv("TWELVEDATA_API_KEY")
 
 def fetch_ngx_data(ticker, api_key):
-    """Fetches OHLCV from TwelveData with fallback formats"""
-    # TwelveData NGX format: usually just TICKER or TICKER.NG
     formats = [ticker, f"{ticker}.NG", f"{ticker}.NGX"]
     
     for fmt in formats:
@@ -36,7 +34,8 @@ def fetch_ngx_data(ticker, api_key):
             data = res.json()
             if "status" in data and data["status"] == "error":
                 continue
-            if "values" in 
+            # ✅ FIXED: Explicit check to prevent markdown stripping issues
+            if "values" in data:
                 df = pd.DataFrame(data["values"])
                 df = df.iloc[::-1].reset_index(drop=True)
                 df["Close"] = pd.to_numeric(df["close"])
@@ -72,7 +71,6 @@ def generate_ngx_signals():
         close = df['Close']
         volume = df['Volume']
         
-        # Indicators
         sma20 = close.rolling(20).mean()
         sma50 = close.rolling(50).mean()
         rsi = calculate_rsi(close)
@@ -85,7 +83,6 @@ def generate_ngx_signals():
         price = close.iloc[-1]
         vol_avg = volume.rolling(20).mean().iloc[-1]
         
-        # Scoring
         score = 0
         reasons = []
         if price > sma20.iloc[-1]: score += 25; reasons.append("Price>SMA20")
@@ -108,7 +105,7 @@ def generate_ngx_signals():
             "Date": datetime.now().strftime("%Y-%m-%d"),
             "Reasons": ", ".join(reasons)
         })
-        time.sleep(0.6)  # Rate limit protection
+        time.sleep(0.6)
         
     df_signals = pd.DataFrame(signals)
     expected_cols = ["Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", "Stop_Loss", "Take_Profit", "Date", "Reasons"]
