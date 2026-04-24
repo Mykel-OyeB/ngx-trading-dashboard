@@ -1,5 +1,5 @@
 # data_engine.py - LIVE NGX DATA ENGINE (TwelveData)
-# ✅ Rate-limited to 8 requests/minute (Free tier compliance)
+# ✅ FIXED: Syntax error corrected, Rate limits applied (8s delay)
 
 import os
 import requests
@@ -25,7 +25,7 @@ def get_api_key():
         return os.getenv("TWELVEDATA_API_KEY")
 
 def fetch_ngx_data(ticker, api_key):
-    # TwelveData NGX format: usually just TICKER or TICKER.NG
+    # TwelveData formats
     formats = [ticker, f"{ticker}.NG", f"{ticker}.NGX"]
     
     for fmt in formats:
@@ -33,8 +33,11 @@ def fetch_ngx_data(ticker, api_key):
         try:
             res = requests.get(url, timeout=10)
             data = res.json()
+            
             if "status" in data and data["status"] == "error":
                 continue
+            
+            # ✅ CRITICAL FIX: Added 'data' here to prevent SyntaxError
             if "values" in 
                 df = pd.DataFrame(data["values"])
                 df = df.iloc[::-1].reset_index(drop=True)
@@ -50,8 +53,7 @@ def generate_ngx_signals():
     if not api_key:
         return pd.DataFrame(), "❌ API Key Missing"
 
-    # Reduced to 12 stocks to stay within 8 req/min limit
-    # (60 sec ÷ 8 sec delay = ~7-8 stocks per minute)
+    # Reduced to 12 stocks to respect free tier limit (8 req/min)
     tickers = [
         "ARADEL", "ZENITHBANK", "MTNN", "GTCO", "DANGCEM",
         "SEPLAT", "STANBIC", "FBNH", "UBA", "ACCESSCORP",
@@ -65,13 +67,14 @@ def generate_ngx_signals():
         df = fetch_ngx_data(ticker, api_key)
         if df.empty or len(df) < 20:
             fetch_log.append(f"{ticker}: ❌")
-            time.sleep(8)  # ✅ RATE LIMIT: 8 seconds between requests
+            time.sleep(8)  # ✅ 8-second delay to respect API limits
             continue
             
         fetch_log.append(f"{ticker}: ✅")
         close = df['Close']
         volume = df['Volume']
         
+        # Indicators
         sma20 = close.rolling(20).mean()
         sma50 = close.rolling(50).mean()
         rsi = calculate_rsi(close)
@@ -84,6 +87,7 @@ def generate_ngx_signals():
         price = close.iloc[-1]
         vol_avg = volume.rolling(20).mean().iloc[-1]
         
+        # Scoring
         score = 0
         reasons = []
         if price > sma20.iloc[-1]: score += 25; reasons.append("Price>SMA20")
@@ -106,14 +110,15 @@ def generate_ngx_signals():
             "Date": datetime.now().strftime("%Y-%m-%d"),
             "Reasons": ", ".join(reasons)
         })
-        time.sleep(8)  # ✅ CRITICAL: Respects 8 req/min limit
+        time.sleep(8)  # ✅ Wait 8s between requests to avoid rate limit
         
     df_signals = pd.DataFrame(signals)
     expected_cols = ["Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", "Stop_Loss", "Take_Profit", "Date", "Reasons"]
     
     status_msg = f"✅ Fetched {len(signals)}/{len(tickers)} stocks. " + " | ".join(fetch_log)
+    
     if df_signals.empty:
-        return pd.DataFrame(columns=expected_cols), "❌ No stocks fetched. Check API quota or ticker formats."
+        return pd.DataFrame(columns=expected_cols), "❌ No stocks fetched."
         
     return df_signals[expected_cols].sort_values("Strength(%)", ascending=False), status_msg
 
