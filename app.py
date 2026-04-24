@@ -4,14 +4,13 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 from datetime import datetime
-import os
 from data_engine import generate_ngx_signals, get_portfolio_metrics, get_fx_risk_alert
 from config import DASHBOARD_REFRESH_MINUTES, ALERT_PROBABILITY_THRESHOLD
 
 st.set_page_config(page_title="NGX Trading Signals", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
 st.markdown(f'<meta http-equiv="refresh" content="{DASHBOARD_REFRESH_MINUTES*60}">', unsafe_allow_html=True)
 
-# Load data with status tracking
+# Load data
 signals_df, fetch_status = generate_ngx_signals()
 sim_metrics = get_portfolio_metrics()
 fx_risk = get_fx_risk_alert()
@@ -24,19 +23,13 @@ st.divider()
 # Sidebar
 st.sidebar.header("📊 System Status")
 st.sidebar.metric("Model Status", "✅ Live")
+st.sidebar.metric("Data Source", "Yahoo Finance (NGX)")
 
-# Check which API is configured
-try:
-    ms_key = st.secrets.get("MARKETSTACK_API_KEY")
-except:
-    ms_key = os.getenv("MARKETSTACK_API_KEY")
-
-if ms_key:
-    st.sidebar.metric("Data Source", "MarketStack (NGX)")
+# Show status
+if "❌" in fetch_status:
+    st.sidebar.error(fetch_status)
 else:
-    st.sidebar.metric("Data Source", "No API Key Set")
-
-st.sidebar.error(fetch_status) if "❌" in fetch_status else st.sidebar.success(fetch_status)
+    st.sidebar.success(fetch_status)
 
 st.sidebar.divider()
 if fx_risk["alert"]:
@@ -58,13 +51,12 @@ with tab1:
         st.dataframe(buy_signals[["Ticker", "Company", "Price(₦)", "Strength(%)", "Stop_Loss", "Take_Profit"]], width="stretch", hide_index=True)
         st.caption("💡 BUY Threshold: Strength ≥ 60%")
     else:
-        st.info("⏸️ No strong BUY signals today. Market conditions are neutral/bearish.")
+        st.info("⏸️ No strong BUY signals today.")
         
     st.divider()
     st.subheader("📊 Market Overview (All Fetched Stocks)")
     if not signals_df.empty:
         st.dataframe(signals_df[["Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", "Reasons"]], width="stretch", hide_index=True)
-        st.caption("Green = BUY (≥60%) | Orange = WATCH (40-59%) | Gray = AVOID (<40%)")
     else:
         st.warning("No data available. Check API status above.")
 
@@ -97,8 +89,8 @@ with tab3:
     st.write(f"- **Alert Time:** 8:00 AM WAT (weekdays)")
     st.write(f"- **Dashboard Refresh:** Every {DASHBOARD_REFRESH_MINUTES} minutes")
     st.divider()
-    st.warning("⚠️ Always verify prices with your broker before executing. Use LIMIT orders only.")
+    st.warning("⚠️ Always verify prices with your broker before executing.")
     st.info("📖 See README.md for setup & troubleshooting.")
 
 st.divider()
-st.caption("Data: MarketStack (NGX) | Model: Technical Scoring | **Not financial advice - DYOR**")
+st.caption("Data: Yahoo Finance (NGX) | Model: Technical Scoring | **Not financial advice - DYOR**")
