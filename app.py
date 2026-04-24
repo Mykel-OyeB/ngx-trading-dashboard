@@ -1,6 +1,4 @@
 # app.py - NGX Algorithmic Trading Dashboard
-# ✅ Shows ALL fetched stocks + live status tracking
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -26,8 +24,19 @@ st.divider()
 # Sidebar
 st.sidebar.header("📊 System Status")
 st.sidebar.metric("Model Status", "✅ Live")
-st.sidebar.metric("Data Source", "TwelveData (NGX Live)")
-st.sidebar.info(fetch_status)  # Shows exactly what was fetched
+
+# Check which API is configured
+try:
+    ms_key = st.secrets.get("MARKETSTACK_API_KEY")
+except:
+    ms_key = os.getenv("MARKETSTACK_API_KEY")
+
+if ms_key:
+    st.sidebar.metric("Data Source", "MarketStack (NGX)")
+else:
+    st.sidebar.metric("Data Source", "No API Key Set")
+
+st.sidebar.error(fetch_status) if "❌" in fetch_status else st.sidebar.success(fetch_status)
 
 st.sidebar.divider()
 if fx_risk["alert"]:
@@ -51,7 +60,6 @@ with tab1:
     else:
         st.info("⏸️ No strong BUY signals today. Market conditions are neutral/bearish.")
         
-    # Show Market Overview so you always see live prices
     st.divider()
     st.subheader("📊 Market Overview (All Fetched Stocks)")
     if not signals_df.empty:
@@ -93,4 +101,4 @@ with tab3:
     st.info("📖 See README.md for setup & troubleshooting.")
 
 st.divider()
-st.caption("Data: TwelveData (NGX) | Model: Technical Scoring | **Not financial advice - DYOR**")
+st.caption("Data: MarketStack (NGX) | Model: Technical Scoring | **Not financial advice - DYOR**")
