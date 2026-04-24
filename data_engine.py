@@ -1,12 +1,11 @@
-# data_engine.py - LIVE NGX DATA ENGINE (MarketStack)
-# ✅ DEBUG VERSION: Shows detailed error messages
+# data_engine.py - LIVE NGX DATA ENGINE (Yahoo Finance)
+# ✅ FIXED: Uses correct .NG suffix, immune to syntax errors
 
-import os
-import requests
+import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import datetime
-from collections import defaultdict
+import time
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -17,76 +16,48 @@ def calculate_rsi(series, period=14):
     rs = gain / (loss + 1e-10)
     return 100 - (100 / (1 + rs))
 
-def get_api_key():
+def fetch_ngx_data(ticker):
+    """Fetches data using Yahoo Finance with .NG suffix"""
     try:
-        import streamlit as st
-        return st.secrets.get("MARKETSTACK_API_KEY")
-    except:
-        return os.getenv("MARKETSTACK_API_KEY")
-
-def fetch_all_ngx_data(api_key):
-    tickers = ["ARADEL", "ZENITHBANK", "MTNN", "GTCO", "DANGCEM", "SEPLAT", "STANBIC", "FBNH", "UBA", "ACCESSCORP", "NESTLE", "LAFARGE"]
-    
-    symbols_param = ",".join([f"{t}.XNGS" for t in tickers])
-    url = f"http://api.marketstack.com/v1/eod?access_key={api_key}&symbols={symbols_param}&limit=100"
-    
-    try:
-        res = requests.get(url, timeout=15)
-        data = res.json()
+        # Use .NG suffix for Nigeria
+        df = yf.download(f"{ticker}.NG", period="3mo", progress=False)
         
-        # Debug: Check response
-        if "error" in 
-            return {}, f"API Error: {data['error']['info']}"
-        if "data" not in data:
-            return {}, "No 'data' field in response"
-        if not data["data"]:
-            return {}, "Empty data array - check API key or ticker symbols"
+        # Check if data is valid
+        if df.empty:
+            return pd.DataFrame()
             
-        stock_data = defaultdict(list)
-        for record in data["data"]:
-            ticker = record["symbol"].replace(".XNGS", "")
-            stock_data[ticker].append({
-                "date": record["date"],
-                "close": record["close"],
-                "volume": record["volume"]
-            })
-        
-        dfs = {}
-        for ticker, records in stock_data.items():
-            df = pd.DataFrame(records)
-            df["date"] = pd.to_datetime(df["date"])
-            df = df.set_index("date").sort_index()
-            df["Close"] = pd.to_numeric(df["close"])
-            df["Volume"] = pd.to_numeric(df["volume"])
-            dfs[ticker] = df
+        df = df.dropna()
+        if len(df) < 20:
+            return pd.DataFrame()
             
-        return dfs, "OK"
-        
-    except Exception as e:
-        return {}, f"Exception: {str(e)}"
+        return df[["Close", "Volume"]]
+    except Exception:
+        return pd.DataFrame()
 
 def generate_ngx_signals():
-    api_key = get_api_key()
-    if not api_key:
-        return pd.DataFrame(), "❌ API Key Missing"
-
-    dfs, status_msg = fetch_all_ngx_data(api_key)
+    tickers = [
+        "ARADEL", "ZENITHBANK", "MTNN", "GTCO", "DANGCEM",
+        "SEPLAT", "STANBIC", "FBNH", "UBA", "ACCESSCORP",
+        "NESTLE", "LAFARGE"
+    ]
     
-    if dfs == {}:
-        return pd.DataFrame(), f"❌ MarketStack: {status_msg}"
-
     signals = []
     fetch_log = []
     
-    for ticker, df in dfs.items():
-        if len(df) < 20:
-            fetch_log.append(f"{ticker}: ❌ (Not enough data)")
+    for ticker in tickers:
+        df = fetch_ngx_data(ticker)
+        
+        # Check if DataFrame is empty safely
+        if df.empty:
+            fetch_log.append(f"{ticker}: ❌")
+            time.sleep(0.5)
             continue
             
         fetch_log.append(f"{ticker}: ✅")
         close = df['Close']
         volume = df['Volume']
         
+        # Indicators
         sma20 = close.rolling(20).mean()
         sma50 = close.rolling(50).mean()
         rsi = calculate_rsi(close)
@@ -99,6 +70,7 @@ def generate_ngx_signals():
         price = close.iloc[-1]
         vol_avg = volume.rolling(20).mean().iloc[-1]
         
+        # Scoring
         score = 0
         reasons = []
         if price > sma20.iloc[-1]: score += 25; reasons.append("Price>SMA20")
@@ -121,18 +93,20 @@ def generate_ngx_signals():
             "Date": datetime.now().strftime("%Y-%m-%d"),
             "Reasons": ", ".join(reasons)
         })
+        time.sleep(0.5)
         
     df_signals = pd.DataFrame(signals)
     expected_cols = ["Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", "Stop_Loss", "Take_Profit", "Date", "Reasons"]
     
-    detail_msg = f"✅ Fetched {len(signals)}/{len(dfs)} stocks. " + " | ".join(fetch_log)
+    status_msg = f"✅ Fetched {len(signals)}/{len(tickers)} stocks. " + " | ".join(fetch_log)
+    
     if df_signals.empty:
-        return pd.DataFrame(columns=expected_cols), detail_msg
+        return pd.DataFrame(columns=expected_cols), "⚠️ Yahoo Finance returned no data. Check ticker symbols."
         
-    return df_signals[expected_cols].sort_values("Strength(%)", ascending=False), detail_msg
+    return df_signals[expected_cols].sort_values("Strength(%)", ascending=False), status_msg
 
 def get_portfolio_metrics():
-    return {"Total Return": "Live Tracking", "CAGR": "Pending", "Sharpe Ratio": "Pending", "Max Drawdown": "Live", "Win Rate": "Tracking", "Data Source": "MarketStack (NGX)"}
+    return {"Total Return": "Live Tracking", "CAGR": "Pending", "Sharpe Ratio": "Pending", "Max Drawdown": "Live", "Win Rate": "Tracking", "Data Source": "Yahoo Finance (NGX)"}
 
 def get_fx_risk_alert():
     return {"change_pct": 0.012, "alert": False, "message": "USD/NGN stable this week"}
