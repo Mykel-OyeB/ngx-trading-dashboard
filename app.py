@@ -1,14 +1,16 @@
-# app.py - COMPLETE FIXED VERSION
+# app.py - NGX Algorithmic Trading Dashboard
+# ✅ Integrated with Streamlit Secrets + TwelveData API
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
 from datetime import datetime
-import os  # ✅ ADDED: For checking env variables
+import os
 from data_engine import generate_ngx_signals, get_portfolio_metrics, get_fx_risk_alert
 from config import DASHBOARD_REFRESH_MINUTES, ALERT_PROBABILITY_THRESHOLD
 
-# Page config
+# Page configuration
 st.set_page_config(
     page_title="NGX Trading Signals",
     page_icon="📈",
@@ -25,7 +27,7 @@ sim_metrics = get_portfolio_metrics()
 fx_risk = get_fx_risk_alert()
 
 # Header
-st.title("🇳 NGX Algorithmic Trading Dashboard")
+st.title("🇳🇬 NGX Algorithmic Trading Dashboard")
 st.markdown(f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} WAT")
 st.divider()
 
@@ -33,8 +35,13 @@ st.divider()
 st.sidebar.header("📊 System Status")
 st.sidebar.metric("Model Status", "✅ Live")
 
-# ✅ FIXED: Show correct data source
-if os.getenv("TWELVEDATA_API_KEY"):
+# Check data source availability
+try:
+    api_key = st.secrets.get("TWELVEDATA_API_KEY")
+except:
+    api_key = os.getenv("TWELVEDATA_API_KEY")
+
+if api_key:
     st.sidebar.metric("Data Source", "TwelveData (NGX Live)")
 else:
     st.sidebar.metric("Data Source", "Yahoo Finance (Fallback)")
@@ -50,7 +57,7 @@ st.sidebar.info("📱 Add to Home Screen:\nSafari/Chrome → Share → Add to Ho
 # Tabs
 tab1, tab2, tab3 = st.tabs(["🎯 Today's Signals", "📈 Performance", "⚙️ Risk & Settings"])
 
-# TAB 1: SIGNALS
+# TAB 1: TODAY'S SIGNALS
 with tab1:
     st.subheader("🟢 Buy Signals - " + datetime.now().strftime("%B %d, %Y"))
     
@@ -65,7 +72,7 @@ with tab1:
             width="stretch",
             hide_index=True
         )
-        st.caption("💡 Green >75% | Orange 60-75% | Gray <60%")
+        st.caption("💡 Signal Strength: Green >75% | Orange 60-75% | Gray <60%")
         st.divider()
         st.subheader("🏆 Top 3 High-Conviction Picks")
         top3 = buy_signals.nlargest(3, "Strength(%)")
