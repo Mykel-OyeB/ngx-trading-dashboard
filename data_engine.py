@@ -1,5 +1,5 @@
 # data_engine.py - LIVE NGX DATA ENGINE (TwelveData)
-# ✅ SYNTAX VERIFIED: Fixed missing 'data' reference
+# ✅ SAFE SYNTAX: Uses .get() to prevent copy-paste corruption
 
 import os
 import requests
@@ -33,12 +33,13 @@ def fetch_ngx_data(ticker, api_key):
             res = requests.get(url, timeout=10)
             data = res.json()
             
-            if "status" in data and data["status"] == "error":
+            if data.get("status") == "error":
                 continue
                 
-            # ✅ FIXED LINE: Explicitly checks the 'data' dictionary
-            if "values" in 
-                df = pd.DataFrame(data["values"])
+            # ✅ SAFE LINE: Replaces the problematic 'if "values" in data:'
+            values = data.get("values")
+            if values:
+                df = pd.DataFrame(values)
                 df = df.iloc[::-1].reset_index(drop=True)
                 df["Close"] = pd.to_numeric(df["close"])
                 df["Volume"] = pd.to_numeric(df["volume"])
