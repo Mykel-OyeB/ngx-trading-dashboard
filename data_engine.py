@@ -1,10 +1,13 @@
-# data_engine.py - Using MarketStack API
+# data_engine.py - LIVE NGX DATA ENGINE (MarketStack)
+# ✅ Optimized: Fetches all 12 stocks in 1 API call to save quota
+
 import os
 import requests
 import pandas as pd
 import numpy as np
 from datetime import datetime
 import time
+from collections import defaultdict
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -22,50 +25,77 @@ def get_api_key():
     except:
         return os.getenv("MARKETSTACK_API_KEY")
 
-def fetch_ngx_data(ticker, api_key):
-    # MarketStack format: ticker.XNGS (NGX)
-    url = f"http://api.marketstack.com/v1/eod?access_key={api_key}&symbols={ticker}.XNGS&limit=90"
-    
-    try:
-        res = requests.get(url, timeout=10)
-        data = res.json()
-        
-        if "data" not in data or not data["data"]:
-            return pd.DataFrame()
-            
-        df = pd.DataFrame(data["data"])
-        df = df.iloc[::-1].reset_index(drop=True)
-        df["Close"] = pd.to_numeric(df["close"])
-        df["Volume"] = pd.to_numeric(df["volume"])
-        return df[["Close", "Volume"]]
-    except Exception:
-        return pd.DataFrame()
-
-def generate_ngx_signals():
-    api_key = get_api_key()
-    if not api_key:
-        return pd.DataFrame(), "❌ API Key Missing"
-
+def fetch_all_ngx_data(api_key):
+    """Fetches 12 NGX stocks in a SINGLE API call to save quota"""
     tickers = [
         "ARADEL", "ZENITHBANK", "MTNN", "GTCO", "DANGCEM",
         "SEPLAT", "STANBIC", "FBNH", "UBA", "ACCESSCORP",
         "NESTLE", "LAFARGE"
     ]
     
+    # MarketStack format: SYMBOL.XNGS, comma-separated
+    symbols_param = ",".join([f"{t}.XNGS" for t in tickers])
+    
+    # Note: Free tier uses HTTP, not HTTPS
+    url = f"http://api.marketstack.com/v1/eod?access_key={api_key}&symbols={symbols_param}&limit=100"
+    
+    try:
+        res = requests.get(url, timeout=15)
+        data = res.json()
+        
+        if "data" not in data or not data["data"]:
+            return {}
+            
+        # Group data by ticker
+        stock_data = defaultdict(list)
+        for record in data["data"]:
+            ticker = record["symbol"].replace(".XNGS", "")
+            stock_data[ticker].append({
+                "date": record["date"],
+                "close": record["close"],
+                "volume": record["volume"]
+            })
+        
+        # Convert to DataFrames
+        dfs = {}
+        for ticker, records in stock_data.items():
+            df = pd.DataFrame(records)
+            df["date"] = pd.to_datetime(df["date"])
+            df = df.set_index("date").sort_index() # Oldest to newest
+            df["Close"] = pd.to_numeric(df["close"])
+            df["Volume"] = pd.to_numeric(df["volume"])
+            dfs[ticker] = df
+            
+        return dfs
+        
+    except Exception as e:
+        print(f"MarketStack Fetch Error: {e}")
+        return {}
+
+def generate_ngx_signals():
+    api_key = get_api_key()
+    if not api_key:
+        return pd.DataFrame(), "❌ API Key Missing"
+
+    # Fetch all data at once
+    dfs = fetch_all_ngx_data(api_key)
+    
+    if not 
+        return pd.DataFrame(), "❌ MarketStack returned no data."
+
     signals = []
     fetch_log = []
     
-    for ticker in tickers:
-        df = fetch_ngx_data(ticker, api_key)
-        if df.empty or len(df) < 20:
-            fetch_log.append(f"{ticker}: ❌")
-            time.sleep(0.5)
+    for ticker, df in dfs.items():
+        if len(df) < 20:
+            fetch_log.append(f"{ticker}: ❌ (Not enough data)")
             continue
             
         fetch_log.append(f"{ticker}: ✅")
         close = df['Close']
         volume = df['Volume']
         
+        # Indicators
         sma20 = close.rolling(20).mean()
         sma50 = close.rolling(50).mean()
         rsi = calculate_rsi(close)
@@ -78,6 +108,7 @@ def generate_ngx_signals():
         price = close.iloc[-1]
         vol_avg = volume.rolling(20).mean().iloc[-1]
         
+        # Scoring
         score = 0
         reasons = []
         if price > sma20.iloc[-1]: score += 25; reasons.append("Price>SMA20")
@@ -100,12 +131,11 @@ def generate_ngx_signals():
             "Date": datetime.now().strftime("%Y-%m-%d"),
             "Reasons": ", ".join(reasons)
         })
-        time.sleep(0.5)
         
     df_signals = pd.DataFrame(signals)
     expected_cols = ["Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", "Stop_Loss", "Take_Profit", "Date", "Reasons"]
     
-    status_msg = f"✅ Fetched {len(signals)}/{len(tickers)} stocks. " + " | ".join(fetch_log)
+    status_msg = f"✅ Fetched {len(signals)}/{len(dfs)} stocks. " + " | ".join(fetch_log)
     if df_signals.empty:
         return pd.DataFrame(columns=expected_cols), "❌ No stocks fetched."
         
