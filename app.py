@@ -86,7 +86,7 @@ with tab1:
     if not buy_signals.empty:
         st.dataframe(
             buy_signals[["Ticker", "Company", "Price(₦)", "Strength(%)", "Stop_Loss", "Take_Profit"]],
-            use_container_width=True,
+            st.dataframe(buy_signals[["Ticker", "Company", "Price(₦)", "Strength(%)", "Stop_Loss", "Take_Profit"]], width="stretch", hide_index=True),
             hide_index=True
         )
         st.caption("💡 Green >75% | Orange 60-75% | Gray <60%")
@@ -112,7 +112,7 @@ with tab2:
     fig = px.line(x=dates, y=strat, title="Strategy vs NGX ASI Benchmark", labels={"x":"Date","y":"Cumulative Return"})
     fig.add_scatter(x=dates, y=bench, name="NGX ASI", line=dict(dash="dash", color="gray"))
     fig.update_layout(hovermode="x unified", height=500)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
     
     st.divider()
     st.subheader("📈 Key Performance Metrics")
@@ -142,4 +142,4 @@ with tab3:
 
 # ================= FOOTER =================
 st.divider()
-st.caption("Data: NGX Group + Yahoo Finance | Model: XGBoost Classifier | **Not financial advice - DYOR**")
+st.caption("Data: NGX Group | Model: XGBoost Classifier | **Not financial advice - DYOR**")
