@@ -1,12 +1,11 @@
 # data_engine.py - LIVE NGX DATA ENGINE (MarketStack)
-# ✅ FINAL FIX: Replaced vulnerable syntax with explicit empty dict check
+# ✅ DEBUG VERSION: Shows detailed error messages
 
 import os
 import requests
 import pandas as pd
 import numpy as np
 from datetime import datetime
-import time
 from collections import defaultdict
 import warnings
 warnings.filterwarnings('ignore')
@@ -26,11 +25,7 @@ def get_api_key():
         return os.getenv("MARKETSTACK_API_KEY")
 
 def fetch_all_ngx_data(api_key):
-    tickers = [
-        "ARADEL", "ZENITHBANK", "MTNN", "GTCO", "DANGCEM",
-        "SEPLAT", "STANBIC", "FBNH", "UBA", "ACCESSCORP",
-        "NESTLE", "LAFARGE"
-    ]
+    tickers = ["ARADEL", "ZENITHBANK", "MTNN", "GTCO", "DANGCEM", "SEPLAT", "STANBIC", "FBNH", "UBA", "ACCESSCORP", "NESTLE", "LAFARGE"]
     
     symbols_param = ",".join([f"{t}.XNGS" for t in tickers])
     url = f"http://api.marketstack.com/v1/eod?access_key={api_key}&symbols={symbols_param}&limit=100"
@@ -39,8 +34,13 @@ def fetch_all_ngx_data(api_key):
         res = requests.get(url, timeout=15)
         data = res.json()
         
-        if "data" not in data or not data["data"]:
-            return {}
+        # Debug: Check response
+        if "error" in 
+            return {}, f"API Error: {data['error']['info']}"
+        if "data" not in data:
+            return {}, "No 'data' field in response"
+        if not data["data"]:
+            return {}, "Empty data array - check API key or ticker symbols"
             
         stock_data = defaultdict(list)
         for record in data["data"]:
@@ -60,22 +60,20 @@ def fetch_all_ngx_data(api_key):
             df["Volume"] = pd.to_numeric(df["volume"])
             dfs[ticker] = df
             
-        return dfs
+        return dfs, "OK"
         
     except Exception as e:
-        print(f"MarketStack Fetch Error: {e}")
-        return {}
+        return {}, f"Exception: {str(e)}"
 
 def generate_ngx_signals():
     api_key = get_api_key()
     if not api_key:
         return pd.DataFrame(), "❌ API Key Missing"
 
-    dfs = fetch_all_ngx_data(api_key)
+    dfs, status_msg = fetch_all_ngx_data(api_key)
     
-    # ✅ SAFE CHECK: Explicitly compares to empty dict to prevent markdown corruption
     if dfs == {}:
-        return pd.DataFrame(), "❌ MarketStack returned no data."
+        return pd.DataFrame(), f"❌ MarketStack: {status_msg}"
 
     signals = []
     fetch_log = []
@@ -127,11 +125,11 @@ def generate_ngx_signals():
     df_signals = pd.DataFrame(signals)
     expected_cols = ["Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", "Stop_Loss", "Take_Profit", "Date", "Reasons"]
     
-    status_msg = f"✅ Fetched {len(signals)}/{len(dfs)} stocks. " + " | ".join(fetch_log)
+    detail_msg = f"✅ Fetched {len(signals)}/{len(dfs)} stocks. " + " | ".join(fetch_log)
     if df_signals.empty:
-        return pd.DataFrame(columns=expected_cols), "❌ No stocks fetched."
+        return pd.DataFrame(columns=expected_cols), detail_msg
         
-    return df_signals[expected_cols].sort_values("Strength(%)", ascending=False), status_msg
+    return df_signals[expected_cols].sort_values("Strength(%)", ascending=False), detail_msg
 
 def get_portfolio_metrics():
     return {"Total Return": "Live Tracking", "CAGR": "Pending", "Sharpe Ratio": "Pending", "Max Drawdown": "Live", "Win Rate": "Tracking", "Data Source": "MarketStack (NGX)"}
