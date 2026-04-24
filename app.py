@@ -1,17 +1,14 @@
-# app.py
-# ✅ COMPLETE STREAMLIT DASHBOARD (Signals + Live Portfolio Sync)
-# Updated: April 2026 | Mobile-Optimized | Zero Breaking Changes
-
-import os
+# app.py - COMPLETE FIXED VERSION
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
 from datetime import datetime
+import os  # ✅ ADDED: For checking env variables
 from data_engine import generate_ngx_signals, get_portfolio_metrics, get_fx_risk_alert
 from config import DASHBOARD_REFRESH_MINUTES, ALERT_PROBABILITY_THRESHOLD
 
-# ================= PAGE CONFIG =================
+# Page config
 st.set_page_config(
     page_title="NGX Trading Signals",
     page_icon="📈",
@@ -19,51 +16,28 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 🔗 PASTE YOUR PUBLISHED GOOGLE SHEETS CSV LINK BELOW:
-SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1V2GumgyU4sVrsrulu8F5v2rpH9dU2M8Grn5qVd7omTR9sHntQvXH0WS7u9Eg7lqydndDsZnU6dLA/pubhtml"
-
-# ================= DATA LOADER =================
-@st.cache_data(ttl=1800)  # Refreshes every 30 mins
-def load_portfolio_data():
-    """Loads live trade data from published Google Sheet"""
-    try:
-        df = pd.read_csv(SHEET_CSV_URL)
-        closed = df[df['Status'] == 'Closed']
-        open_pos = df[df['Status'] == 'Open']
-        
-        metrics = {
-            "Total Trades": len(df),
-            "Closed Trades": len(closed),
-            "Open Positions": len(open_pos),
-            "Net P&L (₦)": f"₦{closed['Net P&L (₦)'].sum():,.0f}" if not closed.empty else "₦0",
-            "Win Rate": f"{(closed['Net P&L (₦)'] > 0).mean()*100:.1f}%" if not closed.empty else "0%",
-            "Capital Deployed": f"₦{open_pos['Net Entry Cost'].sum():,.0f}" if not open_pos.empty else "₦0"
-        }
-        return metrics, closed, open_pos, df
-    except Exception as e:
-        return None, None, None, None
-
-# ================= HEADER =================
+# Auto-refresh
 st.markdown(f'<meta http-equiv="refresh" content="{DASHBOARD_REFRESH_MINUTES*60}">', unsafe_allow_html=True)
-st.title("🇳 NGX Algorithmic Trading Dashboard")
-st.markdown(f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} WAT")
-st.divider()
 
-# ================= LOAD DATA (Signals Only) =================
+# Load data
 signals_df = generate_ngx_signals()
 sim_metrics = get_portfolio_metrics()
 fx_risk = get_fx_risk_alert()
 
-# ================= HEADER =================
-st.markdown(f'<meta http-equiv="refresh" content="{DASHBOARD_REFRESH_MINUTES*60}">', unsafe_allow_html=True)
+# Header
 st.title("🇳 NGX Algorithmic Trading Dashboard")
 st.markdown(f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} WAT")
 st.divider()
 
-# ================= SIDEBAR =================
+# Sidebar
 st.sidebar.header("📊 System Status")
 st.sidebar.metric("Model Status", "✅ Live")
-st.sidebar.metric("Data Source", "TwelveData (NGX Live)" if os.getenv("TWELVEDATA_API_KEY") else "Yahoo Finance (Fallback)")
+
+# ✅ FIXED: Show correct data source
+if os.getenv("TWELVEDATA_API_KEY"):
+    st.sidebar.metric("Data Source", "TwelveData (NGX Live)")
+else:
+    st.sidebar.metric("Data Source", "Yahoo Finance (Fallback)")
 
 st.sidebar.divider()
 if fx_risk["alert"]:
@@ -73,12 +47,13 @@ else:
 
 st.sidebar.info("📱 Add to Home Screen:\nSafari/Chrome → Share → Add to Home Screen")
 
-# ================= TABS (1-3 ONLY) =================
+# Tabs
 tab1, tab2, tab3 = st.tabs(["🎯 Today's Signals", "📈 Performance", "⚙️ Risk & Settings"])
 
 # TAB 1: SIGNALS
 with tab1:
     st.subheader("🟢 Buy Signals - " + datetime.now().strftime("%B %d, %Y"))
+    
     if "Signal" in signals_df.columns and not signals_df.empty:
         buy_signals = signals_df[signals_df["Signal"] == "BUY"].copy()
     else:
@@ -87,7 +62,7 @@ with tab1:
     if not buy_signals.empty:
         st.dataframe(
             buy_signals[["Ticker", "Company", "Price(₦)", "Strength(%)", "Stop_Loss", "Take_Profit"]],
-            st.dataframe(buy_signals[["Ticker", "Company", "Price(₦)", "Strength(%)", "Stop_Loss", "Take_Profit"]], width="stretch", hide_index=True),
+            width="stretch",
             hide_index=True
         )
         st.caption("💡 Green >75% | Orange 60-75% | Gray <60%")
@@ -100,7 +75,7 @@ with tab1:
                 st.metric(row["Ticker"], f"₦{row['Price(₦)']}", f"{row['Strength(%)']}%")
                 st.caption(f"SL: ₦{row['Stop_Loss']} | TP: ₦{row['Take_Profit']}")
     else:
-        st.info("⏸️ No buy signals available right now. Market data is refreshing...")
+        st.info("⏸️ No buy signals meet threshold today. Stay patient.")
 
 # TAB 2: PERFORMANCE
 with tab2:
@@ -141,6 +116,6 @@ with tab3:
     st.warning("⚠️ **Important:** This dashboard uses simulated data for demonstration. To connect real NGX data, edit `data_engine.py` with your broker API or NGX Group data feed.")
     st.info("📖 **Need Help?** See README.md for setup instructions.")
 
-# ================= FOOTER =================
+# Footer
 st.divider()
-st.caption("Data: NGX Group | Model: XGBoost Classifier | **Not financial advice - DYOR**")
+st.caption("Data: NGX Group + TwelveData | Model: XGBoost Classifier | **Not financial advice - DYOR**")
