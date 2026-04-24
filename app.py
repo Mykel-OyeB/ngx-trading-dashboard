@@ -48,24 +48,21 @@ st.title("🇳 NGX Algorithmic Trading Dashboard")
 st.markdown(f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} WAT")
 st.divider()
 
-# ================= LOAD DATA =================
+# ================= LOAD DATA (Signals Only) =================
 signals_df = generate_ngx_signals()
 sim_metrics = get_portfolio_metrics()
 fx_risk = get_fx_risk_alert()
-portfolio_metrics, closed_trades, open_positions, full_sheet_data = load_portfolio_data()
+
+# ================= HEADER =================
+st.markdown(f'<meta http-equiv="refresh" content="{DASHBOARD_REFRESH_MINUTES*60}">', unsafe_allow_html=True)
+st.title("🇳 NGX Algorithmic Trading Dashboard")
+st.markdown(f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} WAT")
+st.divider()
 
 # ================= SIDEBAR =================
 st.sidebar.header("📊 System Status")
 st.sidebar.metric("Model Status", "✅ Live")
 st.sidebar.metric("Data Source", "Yahoo Finance + NGX")
-
-if portfolio_metrics:
-    st.sidebar.divider()
-    st.sidebar.header("💼 Live Portfolio")
-    for k, v in portfolio_metrics.items():
-        st.sidebar.metric(k, v)
-else:
-    st.sidebar.warning("🔗 Sheets not linked yet")
 
 st.sidebar.divider()
 if fx_risk["alert"]:
@@ -75,14 +72,12 @@ else:
 
 st.sidebar.info("📱 Add to Home Screen:\nSafari/Chrome → Share → Add to Home Screen")
 
-# ================= TABS =================
-tab1, tab2, tab3, tab4 = st.tabs(["🎯 Today's Signals", "📈 Performance", "⚙️ Risk & Settings", "💼 Live Portfolio"])
+# ================= TABS (1-3 ONLY) =================
+tab1, tab2, tab3 = st.tabs(["🎯 Today's Signals", "📈 Performance", "⚙️ Risk & Settings"])
 
-# TAB 1: SIGNALS (Bulletproof Version)
+# TAB 1: SIGNALS
 with tab1:
     st.subheader("🟢 Buy Signals - " + datetime.now().strftime("%B %d, %Y"))
-    
-    # ✅ Safe filtering: prevents KeyError if yfinance returns empty/mismatched data
     if "Signal" in signals_df.columns and not signals_df.empty:
         buy_signals = signals_df[signals_df["Signal"] == "BUY"].copy()
     else:
@@ -106,7 +101,7 @@ with tab1:
     else:
         st.info("⏸️ No buy signals available right now. Market data is refreshing...")
 
-# TAB 2: PERFORMANCE (Unchanged)
+# TAB 2: PERFORMANCE
 with tab2:
     st.subheader("📊 Strategy Equity Curve (Simulated)")
     dates = pd.date_range(start="2023-01-01", periods=100, freq="B")
@@ -127,7 +122,7 @@ with tab2:
     c3.metric("Max Drawdown", "-18.4%", "Within limit")
     c4.metric("Win Rate", "54.2%", "500+ trades")
 
-# TAB 3: RISK & SETTINGS (Unchanged)
+# TAB 3: RISK & SETTINGS
 with tab3:
     st.subheader("⚠️ Risk Management Rules")
     c1, c2, c3 = st.columns(3)
@@ -145,55 +140,6 @@ with tab3:
     st.warning("⚠️ **Important:** This dashboard uses simulated data for demonstration. To connect real NGX data, edit `data_engine.py` with your broker API or NGX Group data feed.")
     st.info("📖 **Need Help?** See README.md for setup instructions.")
 
-# TAB 4: LIVE PORTFOLIO (NEW - Google Sheets Sync)
-with tab4:
-    st.subheader("💼 Live Portfolio from Google Sheets")
-    
-    if portfolio_metrics:
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Net P&L", portfolio_metrics["Net P&L (₦)"])
-        c2.metric("Win Rate", portfolio_metrics["Win Rate"])
-        c3.metric("Open Positions", portfolio_metrics["Open Positions"])
-        
-        st.divider()
-        col_a, col_b = st.columns(2)
-        
-        with col_a:
-            st.write("🔓 Open Positions")
-            if not open_positions.empty:
-                st.dataframe(
-                    open_positions[["Ticker", "Qty", "Entry Price (₦)", "Net Entry Cost", "Status"]],
-                    use_container_width=True,
-                    hide_index=True
-                )
-            else:
-                st.info("No open positions. Start trading to see them here.")
-                
-        with col_b:
-            st.write("🏆 Recent Closed Trades")
-            if not closed_trades.empty:
-                st.dataframe(
-                    closed_trades[["Ticker", "Entry Price (₦)", "Exit Price (₦)", "Net P&L (₦)", "Return %"]].head(5),
-                    use_container_width=True,
-                    hide_index=True
-                )
-            else:
-                st.info("No closed trades yet.")
-                
-        st.divider()
-        st.write("📈 Live Equity Curve")
-        if full_sheet_data is not None and "Portfolio Value (₦)" in full_sheet_data.columns and "Date" in full_sheet_data.columns:
-            equity_df = full_sheet_data[["Date", "Portfolio Value (₦)"]].dropna().sort_values("Date")
-            if not equity_df.empty:
-                st.line_chart(equity_df.set_index("Date")["Portfolio Value (₦)"])
-            else:
-                st.info("Add trades to your Google Sheet to generate the equity curve.")
-        else:
-            st.info("💡 To enable live equity curve: Ensure your published sheet has columns named exactly 'Date' and 'Portfolio Value (₦)'")
-            
-    else:
-        st.error("🔗 Google Sheets link not configured or failed to load.\n\n**Fix:** Open `app.py` → Replace `YOUR_PUBLISHED_CSV_LINK_HERE` with your actual published CSV link → Commit & redeploy.")
-
 # ================= FOOTER =================
 st.divider()
-st.caption("Data: NGX Group + Yahoo Finance | Model: XGBoost Classifier | Last Sync: Live | **Not financial advice - DYOR**")
+st.caption("Data: NGX Group + Yahoo Finance | Model: XGBoost Classifier | **Not financial advice - DYOR**")
