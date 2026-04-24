@@ -2,6 +2,7 @@
 # ✅ COMPLETE STREAMLIT DASHBOARD (Signals + Live Portfolio Sync)
 # Updated: April 2026 | Mobile-Optimized | Zero Breaking Changes
 
+import os
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -62,7 +63,7 @@ st.divider()
 # ================= SIDEBAR =================
 st.sidebar.header("📊 System Status")
 st.sidebar.metric("Model Status", "✅ Live")
-st.sidebar.metric("Data Source", "Yahoo Finance + NGX")
+st.sidebar.metric("Data Source", "TwelveData (NGX Live)" if os.getenv("TWELVEDATA_API_KEY") else "Yahoo Finance (Fallback)")
 
 st.sidebar.divider()
 if fx_risk["alert"]:
