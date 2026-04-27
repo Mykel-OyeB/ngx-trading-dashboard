@@ -19,7 +19,7 @@ def fetch_prices_from_sheet():
     # You'll publish your LivePrices sheet to web (CSV format)
     # URL format: https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/gviz/tq?tqx=out:csv&sheet=LivePrices
     
-    SHEET_URL = "YOUR_PUBLISHED_SHEET_URL_HERE"
+    SHEET_URL = https://docs.google.com/spreadsheets/d/e/2PACX-1vS1V2GumgyU4sVrsrulu8F5v2rpH9dU2M8Grn5qVd7omTR9sHntQvXH0WS7u9Eg7lqydndDsZnU6dLA/pubhtml
     
     try:
         df = pd.read_csv(SHEET_URL)
