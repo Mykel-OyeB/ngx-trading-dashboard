@@ -16,7 +16,7 @@ def calculate_rsi(series, period=14):
 
 def fetch_prices_from_sheet():
     """Fetches prices from published Google Sheet"""
-    SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1V2GumgyU4sVrsrulu8F5v2rpH9dU2M8Grn5qVd7omTR9sHntQvXH0WS7u9Eg7lqydndDsZnU6dLA/pub?output=csv"
+    SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1V2GumgyU4sVrsrulu8F5v2rpH9dU2M8Grn5qVd7omTR9sHntQvXH0WS7u9Eg7lqydndDsZnU6dLA/pub?gid=1101410921&single=true&output=csv"
     
     try:
         df = pd.read_csv(SHEET_URL)
