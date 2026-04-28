@@ -23,11 +23,13 @@ st.divider()
 # Sidebar
 st.sidebar.header("📊 System Status")
 st.sidebar.metric("Model Status", "✅ Live")
-st.sidebar.metric("Data Source", "Yahoo Finance (NGX)")
+st.sidebar.metric("Data Source", "Google Sheets (NSE 30)")
 
-# Show status
+# Show status with correct color
 if "❌" in fetch_status:
     st.sidebar.error(fetch_status)
+elif "⚠️" in fetch_status:
+    st.sidebar.warning(fetch_status)
 else:
     st.sidebar.success(fetch_status)
 
@@ -57,8 +59,9 @@ with tab1:
     st.subheader("📊 Market Overview (All Fetched Stocks)")
     if not signals_df.empty:
         st.dataframe(signals_df[["Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", "Reasons"]], width="stretch", hide_index=True)
+        st.caption("Green = BUY (≥60%) | Orange = WATCH (40-59%) | Gray = AVOID (<40%)")
     else:
-        st.warning("No data available. Check API status above.")
+        st.warning("No data available. Add 20+ days of historical prices to your Google Sheet.")
 
 with tab2:
     st.subheader("📊 Strategy Equity Curve (Simulated)")
@@ -93,4 +96,4 @@ with tab3:
     st.info("📖 See README.md for setup & troubleshooting.")
 
 st.divider()
-st.caption("Data: Yahoo Finance (NGX) | Model: Technical Scoring | **Not financial advice - DYOR**")
+st.caption("Data: Google Sheets (NSE 30) | Model: Technical Scoring | **Not financial advice - DYOR**")
