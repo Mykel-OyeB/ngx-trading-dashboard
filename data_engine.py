@@ -1,5 +1,5 @@
-# data_engine.py - NGX DATA ENGINE (Google Sheets)
-# ✅ Includes % Return column, type-safe math, T+2 ready
+# data_engine.py - NGX DATA ENGINE (Nigeria-Optimized)
+# ✅ 30% Target Return, 75% Strength Threshold
 
 import pandas as pd
 import numpy as np
@@ -84,15 +84,16 @@ def generate_ngx_signals():
             
         score = min(100, score)
         
+        # ✅ NIGERIA-OPTIMIZED: 30% target, 75% strength threshold
         signals.append({
             "Ticker": ticker,
             "Company": ticker.replace("MTNN", "MTN Nigeria").replace("GTCO", "GTCo"),
             "Price(₦)": round(float(price), 2) if pd.notna(price) else 0,
-            "Signal": "BUY" if score >= 60 else ("WATCH" if score >= 40 else "AVOID"),
+            "Signal": "BUY" if score >= 75 else ("WATCH" if score >= 55 else "AVOID"),  # ✅ Higher threshold
             "Strength(%)": score,
-            "Stop_Loss": round(float(price) * 0.93, 2) if pd.notna(price) else 0,
-            "Take_Profit": round(float(price) * 1.15, 2) if pd.notna(price) else 0,
-            "Potential_Return_%": 15.0,  # ✅ NEW: Standard 15% target
+            "Stop_Loss": round(float(price) * 0.93, 2) if pd.notna(price) else 0,  # -7% SL
+            "Take_Profit": round(float(price) * 1.30, 2) if pd.notna(price) else 0,  # ✅ +30% TP
+            "Potential_Return_%": 30.0,  # ✅ Realistic for Nigeria
             "Date": latest_date.strftime("%Y-%m-%d"),
             "Reasons": ", ".join(reasons)
         })
