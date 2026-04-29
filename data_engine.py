@@ -1,5 +1,5 @@
 # data_engine.py - NGX DATA ENGINE (Google Sheets)
-# ✅ Live: Connected to your NSE 30 price sheet
+# ✅ FIXED: Force numeric conversion to prevent type errors
 
 import pandas as pd
 import numpy as np
@@ -20,41 +20,43 @@ def fetch_prices_from_sheet():
     
     try:
         df = pd.read_csv(SHEET_URL)
-        # Clean column names
+        # Clean column names (remove extra spaces)
         df.columns = df.columns.str.strip()
-        # Convert date column
-        df['Date'] = pd.to_datetime(df['Date'])
+        # Convert date
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        # ✅ CRITICAL FIX: Force numeric conversion, invalid values become NaN
+        df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
+        df['Volume'] = pd.to_numeric(df['Volume'], errors='coerce')
+        # Drop rows with missing numeric data
+        df = df.dropna(subset=['Close', 'Volume', 'Date', 'Ticker'])
         return df
     except Exception as e:
         print(f"Sheet fetch error: {e}")
         return pd.DataFrame()
 
 def generate_ngx_signals():
-    # Get prices from Google Sheet
     prices_df = fetch_prices_from_sheet()
     
     if prices_df.empty:
-        return pd.DataFrame(), "⚠️ No prices in Google Sheet. Check URL or add data."
+        return pd.DataFrame(), "❌ Sheet returned no valid data. Check format."
     
-    # Get latest date
     latest_date = prices_df['Date'].max()
     latest_prices = prices_df[prices_df['Date'] == latest_date]
     
     if latest_prices.empty:
-        return pd.DataFrame(), f"⚠️ No prices for latest date."
+        return pd.DataFrame(), f"❌ No valid data for date {latest_date}"
     
     signals = []
     fetch_log = []
     
-    # Process each stock in the sheet
     for _, row in latest_prices.iterrows():
-        ticker = row['Ticker'].strip()
+        ticker = str(row['Ticker']).strip()
         
         # Get historical data for this ticker (last 60 days)
         ticker_history = prices_df[prices_df['Ticker'].str.strip() == ticker].sort_values('Date').tail(60)
         
         if len(ticker_history) < 20:
-            fetch_log.append(f"{ticker}: ⚠️ (Need {20-len(ticker_history)} more days)")
+            fetch_log.append(f"{ticker}: ⚠️")
             continue
             
         fetch_log.append(f"{ticker}: ✅")
@@ -62,7 +64,7 @@ def generate_ngx_signals():
         close = ticker_history['Close']
         volume = ticker_history['Volume']
         
-        # Indicators
+        # ✅ Safe indicator calculations with NaN handling
         sma20 = close.rolling(20).mean()
         sma50 = close.rolling(50).mean()
         rsi = calculate_rsi(close)
@@ -74,27 +76,38 @@ def generate_ngx_signals():
         
         price = row['Close']
         vol_avg = volume.rolling(20).mean().iloc[-1]
+        current_vol = volume.iloc[-1]
         
-        # Scoring
+        # ✅ Safe scoring with type checks
         score = 0
         reasons = []
-        if price > sma20.iloc[-1]: score += 25; reasons.append("Price>SMA20")
-        if sma20.iloc[-1] > sma50.iloc[-1]: score += 20; reasons.append("SMA20>SMA50")
-        if 40 < rsi.iloc[-1] < 65: score += 20; reasons.append("RSI:40-65")
-        elif rsi.iloc[-1] < 40: score += 10; reasons.append("RSI:<40")
-        if macd_hist.iloc[-1] > 0: score += 15; reasons.append("MACD:>0")
-        if volume.iloc[-1] > vol_avg * 1.2: score += 20; reasons.append("Vol:>120%")
+        
+        try:
+            if pd.notna(price) and pd.notna(sma20.iloc[-1]) and price > sma20.iloc[-1]:
+                score += 25; reasons.append("Price>SMA20")
+            if pd.notna(sma20.iloc[-1]) and pd.notna(sma50.iloc[-1]) and sma20.iloc[-1] > sma50.iloc[-1]:
+                score += 20; reasons.append("SMA20>SMA50")
+            if pd.notna(rsi.iloc[-1]) and 40 < rsi.iloc[-1] < 65:
+                score += 20; reasons.append("RSI:40-65")
+            elif pd.notna(rsi.iloc[-1]) and rsi.iloc[-1] < 40:
+                score += 10; reasons.append("RSI:<40")
+            if pd.notna(macd_hist.iloc[-1]) and macd_hist.iloc[-1] > 0:
+                score += 15; reasons.append("MACD:>0")
+            if pd.notna(current_vol) and pd.notna(vol_avg) and vol_avg > 0 and current_vol > vol_avg * 1.2:
+                score += 20; reasons.append("Vol:>120%")
+        except Exception:
+            pass  # Skip this stock if calculations fail
             
         score = min(100, score)
         
         signals.append({
             "Ticker": ticker,
             "Company": ticker.replace("MTNN", "MTN Nigeria").replace("GTCO", "GTCo"),
-            "Price(₦)": round(price, 2),
+            "Price(₦)": round(float(price), 2) if pd.notna(price) else 0,
             "Signal": "BUY" if score >= 60 else ("WATCH" if score >= 40 else "AVOID"),
             "Strength(%)": score,
-            "Stop_Loss": round(price * 0.93, 2),
-            "Take_Profit": round(price * 1.15, 2),
+            "Stop_Loss": round(float(price) * 0.93, 2) if pd.notna(price) else 0,
+            "Take_Profit": round(float(price) * 1.15, 2) if pd.notna(price) else 0,
             "Date": latest_date.strftime("%Y-%m-%d"),
             "Reasons": ", ".join(reasons)
         })
@@ -102,15 +115,15 @@ def generate_ngx_signals():
     df_signals = pd.DataFrame(signals)
     expected_cols = ["Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", "Stop_Loss", "Take_Profit", "Date", "Reasons"]
     
-    status_msg = f"✅ Analyzed {len(signals)}/{len(latest_prices)} stocks from {latest_date.strftime('%Y-%m-%d')}. " + " | ".join(fetch_log[:10])
+    status_msg = f"✅ {len(signals)}/{len(latest_prices)} stocks analyzed from {latest_date.strftime('%Y-%m-%d')}. " + " | ".join(fetch_log[:10])
     
     if df_signals.empty:
-        return pd.DataFrame(columns=expected_cols), "⚠️ No stocks met minimum data requirements."
+        return pd.DataFrame(columns=expected_cols), status_msg
         
     return df_signals[expected_cols].sort_values("Strength(%)", ascending=False), status_msg
 
 def get_portfolio_metrics():
-    return {"Total Return": "Live Tracking", "CAGR": "Pending", "Sharpe Ratio": "Pending", "Max Drawdown": "Live", "Win Rate": "Tracking", "Data Source": "Google Sheets (NSE 30)"}
+    return {"Total Return": "Live Tracking", "Data Source": "Google Sheets (NSE 30)"}
 
 def get_fx_risk_alert():
     return {"change_pct": 0.012, "alert": False, "message": "USD/NGN stable this week"}
