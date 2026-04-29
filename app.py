@@ -1,4 +1,6 @@
 # app.py - NGX Algorithmic Trading Dashboard
+# ✅ T+2 Settlement, Updated Signal Columns, Live Status
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -10,12 +12,10 @@ from config import DASHBOARD_REFRESH_MINUTES, ALERT_PROBABILITY_THRESHOLD
 st.set_page_config(page_title="NGX Trading Signals", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
 st.markdown(f'<meta http-equiv="refresh" content="{DASHBOARD_REFRESH_MINUTES*60}">', unsafe_allow_html=True)
 
-# Load data
 signals_df, fetch_status = generate_ngx_signals()
 sim_metrics = get_portfolio_metrics()
 fx_risk = get_fx_risk_alert()
 
-# Header
 st.title("🇳🇬 NGX Algorithmic Trading Dashboard")
 st.markdown(f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} WAT")
 st.divider()
@@ -25,7 +25,6 @@ st.sidebar.header("📊 System Status")
 st.sidebar.metric("Model Status", "✅ Live")
 st.sidebar.metric("Data Source", "Google Sheets (NSE 30)")
 
-# Show status with correct color
 if "❌" in fetch_status:
     st.sidebar.error(fetch_status)
 elif "⚠️" in fetch_status:
@@ -35,7 +34,7 @@ else:
 
 st.sidebar.divider()
 if fx_risk["alert"]:
-    st.sidebar.error(f"⚠️ FX RISK: {fx_risk['message']}")
+    st.sidebar.error(f"️ FX RISK: {fx_risk['message']}")
 else:
     st.sidebar.success(f"✅ FX: {fx_risk['message']}")
 
@@ -50,8 +49,10 @@ with tab1:
     buy_signals = signals_df[signals_df["Signal"] == "BUY"].copy() if not signals_df.empty else pd.DataFrame()
     
     if not buy_signals.empty:
-        st.dataframe(buy_signals[["Ticker", "Company", "Price(₦)", "Strength(%)", "Stop_Loss", "Take_Profit"]], width="stretch", hide_index=True)
-        st.caption("💡 BUY Threshold: Strength ≥ 60%")
+        # ✅ UPDATED: Includes Potential_Return_% column
+        display_cols = ["Ticker", "Company", "Price(₦)", "Strength(%)", "Stop_Loss", "Take_Profit", "Potential_Return_%"]
+        st.dataframe(buy_signals[display_cols], width="stretch", hide_index=True)
+        st.caption("💡 BUY Threshold: Strength ≥ 60% | Return assumes 15% Take-Profit")
     else:
         st.info("⏸️ No strong BUY signals today.")
         
@@ -64,7 +65,7 @@ with tab1:
         st.warning("No data available. Add 20+ days of historical prices to your Google Sheet.")
 
 with tab2:
-    st.subheader("📊 Strategy Equity Curve (Simulated)")
+    st.subheader(" Strategy Equity Curve (Simulated)")
     dates = pd.date_range(start="2023-01-01", periods=100, freq="B")
     np.random.seed(42)
     strat = np.cumprod(1 + np.random.normal(0.0006, 0.015, 100))
@@ -86,14 +87,17 @@ with tab3:
     c1.metric("Max Position Size", "5%")
     c2.metric("Stop Loss", "7%")
     c3.metric("Take Profit", "15-25%")
+    
     st.divider()
     st.subheader("🔔 Alert Settings")
     st.write(f"- **Signal Threshold:** {ALERT_PROBABILITY_THRESHOLD*100}% minimum strength")
     st.write(f"- **Alert Time:** 8:00 AM WAT (weekdays)")
+    st.write(f"- **Settlement Cycle:** T+2 (trade date + 2 business days) ✅")  # ✅ UPDATED: T+2
     st.write(f"- **Dashboard Refresh:** Every {DASHBOARD_REFRESH_MINUTES} minutes")
+    
     st.divider()
     st.warning("⚠️ Always verify prices with your broker before executing.")
-    st.info("📖 See README.md for setup & troubleshooting.")
+    st.info("📖 See Operations Manual v1.0 for setup & troubleshooting.")
 
 st.divider()
 st.caption("Data: Google Sheets (NSE 30) | Model: Technical Scoring | **Not financial advice - DYOR**")
