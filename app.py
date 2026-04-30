@@ -1,5 +1,5 @@
 # app.py - NGX Algorithmic Trading Dashboard
-# ✅ Full rebuild: 30% TP, 75% threshold, T+2, updated risk rules
+# ✅ FIXED: Price(₦) column name corrected
 
 import streamlit as st
 import pandas as pd
@@ -42,7 +42,7 @@ else:
 st.sidebar.info("📱 Add to Home Screen:\nSafari/Chrome → Share → Add to Home Screen")
 
 # Tabs
-tab1, tab2, tab3 = st.tabs(["🎯 Today's Signals", "📈 Performance", "️ Risk & Settings"])
+tab1, tab2, tab3 = st.tabs(["🎯 Today's Signals", "📈 Performance", "⚙️ Risk & Settings"])
 
 # TAB 1: SIGNALS
 with tab1:
@@ -58,9 +58,10 @@ with tab1:
         st.info("⏸️ No strong BUY signals today. Market conditions are neutral/bearish.")
         
     st.divider()
-    st.subheader(" Market Overview (All Fetched Stocks)")
+    st.subheader("📊 Market Overview (All Fetched Stocks)")
     if not signals_df.empty:
-        st.dataframe(signals_df[["Ticker", "Company", "Price()", "Signal", "Strength(%)", "Reasons"]], width="stretch", hide_index=True)
+        # ✅ FIXED: Price(₦) with Naira symbol
+        st.dataframe(signals_df[["Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", "Reasons"]], width="stretch", hide_index=True)
         st.caption("🟢 BUY (≥75%) | 🟠 WATCH (55-74%) | ⚪ AVOID (<55%)")
     else:
         st.warning("No data available. Ensure LivePrices tab has 20+ days of history.")
