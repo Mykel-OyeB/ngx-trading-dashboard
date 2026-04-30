@@ -4,3 +4,4 @@ numpy
 plotly
 requests
 yfinance
+pytz==2024.1
