@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 from datetime import datetime
-from data_engine import generate_ngx_signals, get_portfolio_metrics, get_fx_risk_alert
+from data_engine import generate_ngx_signals, get_portfolio_metrics, get_fx_risk_alert, fetch_prices_from_sheet
 from analytics_engine import backtest_strategy, get_analytics_summary, generate_monthly_performance
 
 # Page Config
