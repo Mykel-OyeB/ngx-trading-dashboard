@@ -7,7 +7,15 @@ import numpy as np
 import plotly.express as px
 from datetime import datetime
 from data_engine import generate_ngx_signals, get_portfolio_metrics, get_fx_risk_alert, fetch_prices_from_sheet
-from analytics_engine import backtest_strategy, get_analytics_summary, generate_monthly_performance
+# ✅ SAFE IMPORT: Prevents full app crash if analytics has issues
+try:
+    from analytics_engine import backtest_strategy, get_analytics_summary, generate_monthly_performance
+except Exception as e:
+    print(f"⚠️ Analytics module failed to load: {e}")
+    # Fallback dummy functions to keep app running
+    backtest_strategy = lambda *a, **k: (pd.DataFrame(), 0, pd.DataFrame())
+    get_analytics_summary = lambda *a, **k: {}
+    generate_monthly_performance = lambda *a, **k: pd.DataFrame()
 
 # Page Config
 st.set_page_config(page_title="NGX Trading Signals", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
