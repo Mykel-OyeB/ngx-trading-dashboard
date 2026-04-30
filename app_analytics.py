@@ -1,6 +1,15 @@
 # Add this as TAB 4 in your existing app.py
 # Place it after tab3 (Risk & Settings)
 
+import pandas as pd
+import numpy as np
+from datetime import datetime
+import warnings
+warnings.filterwarnings('ignore')
+
+# Import the data fetcher directly
+from data_engine import fetch_prices_from_sheet
+
 with tab4:
     st.subheader("📊 Strategy Performance Analytics")
     
