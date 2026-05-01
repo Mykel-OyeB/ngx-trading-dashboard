@@ -140,14 +140,14 @@ with tab4:
         
         **Why this matters:**
         The backtest engine needs to know what signals were generated on each historical date.
-        Right now, you only have signals for TODAY. We need to:
+        Right now, we only have signals for TODAY. We need to:
         
         1. **Collect signals daily** (starting now)
         2. **Store them in Google Sheets** (new "SignalHistory" tab)
         3. **After 60 days**, backtest will work properly
         
         **Temporary workaround:**
-        - Track your manual trades in the Trades tab
+        - Track the manual trades in the Trades tab
         - Calculate P&L manually for now
         - Analytics tab will activate after 60 days of signal collection
         """)
