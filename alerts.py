@@ -1,12 +1,45 @@
 # alerts.py - TELEGRAM + GOOGLE SHEETS LOGGING
-# ✅ Fixed: Removed incompatible 'NotAuthorized' exception
+# ✅ Fixed: Better handling of GCP_PRIVATE_KEY newlines
 
 import requests
 import os
+import json
 from datetime import datetime
 import pytz
-import gspread
-from google.oauth2.service_account import Credentials
+
+print("🚀 Starting alerts.py...")
+
+# Check if secrets exist BEFORE importing gspread
+print("🔍 Checking environment variables...")
+secrets_to_check = [
+    'TELEGRAM_BOT_TOKEN',
+    'TELEGRAM_CHAT_ID', 
+    'GCP_PROJECT_ID',
+    'GCP_PRIVATE_KEY',
+    'GCP_CLIENT_EMAIL'
+]
+
+for secret in secrets_to_check:
+    value = os.getenv(secret)
+    if value:
+        if secret == 'GCP_PRIVATE_KEY':
+            print(f"✅ {secret}: Present ({len(value)} chars)")
+        elif secret in ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID']:
+            print(f"✅ {secret}: Present (masked)")
+        else:
+            print(f"✅ {secret}: {value}")
+    else:
+        print(f"❌ {secret}: MISSING")
+
+# Now import gspread
+try:
+    import gspread
+    from google.oauth2.service_account import Credentials
+    print("✅ Google libraries imported")
+except Exception as e:
+    print(f"❌ Failed to import Google libraries: {e}")
+    exit(1)
+
 from data_engine import generate_ngx_signals, get_fx_risk_alert
 
 def send_telegram_alert(message):
@@ -33,42 +66,68 @@ def send_telegram_alert(message):
             print(f"❌ Telegram error: {response.json()}")
             return False
     except Exception as e:
-        print(f" Telegram exception: {e}")
+        print(f"❌ Telegram exception: {e}")
         return False
 
 def log_signals_to_sheet(signals_df, date_str):
+    print("📝 Starting Google Sheets logging...")
+    
     try:
-        # Google Sheets API Setup
-        scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+        # Get credentials from environment
+        project_id = os.getenv('GCP_PROJECT_ID')
+        private_key = os.getenv('GCP_PRIVATE_KEY')
+        client_email = os.getenv('GCP_CLIENT_EMAIL')
+        private_key_id = os.getenv('GCP_PRIVATE_KEY_ID')
+        client_id = os.getenv('GCP_CLIENT_ID')
+        client_x509_cert_url = os.getenv('GCP_CLIENT_CERT_URL')
         
+        # Check all required fields
+        if not all([project_id, private_key, client_email]):
+            print("❌ Missing required GCP credentials")
+            print(f"   project_id: {'✅' if project_id else '❌'}")
+            print(f"   private_key: {'✅' if private_key else '❌'} ({len(private_key) if private_key else 0} chars)")
+            print(f"   client_email: {'✅' if client_email else '❌'}")
+            return False
+        
+        # Fix private key newlines (common issue with GitHub Secrets)
+        private_key = private_key.replace('\\n', '\n')
+        
+        # Build credentials dict
         creds_dict = {
             "type": "service_account",
-            "project_id": os.getenv("GCP_PROJECT_ID"),
-            "private_key_id": os.getenv("GCP_PRIVATE_KEY_ID"),
-            "private_key": os.getenv("GCP_PRIVATE_KEY").replace('\\n', '\n'),
-            "client_email": os.getenv("GCP_CLIENT_EMAIL"),
-            "client_id": os.getenv("GCP_CLIENT_ID"),
+            "project_id": project_id,
+            "private_key_id": private_key_id or "unknown",
+            "private_key": private_key,
+            "client_email": client_email,
+            "client_id": client_id or "unknown",
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": os.getenv("GCP_CLIENT_CERT_URL")
+            "client_x509_cert_url": client_x509_cert_url or "https://www.googleapis.com/robot/v1/metadata/x509/" + client_email
         }
         
         print("🔑 Attempting to authorize with Google...")
+        print(f"   Project ID: {project_id}")
+        print(f"   Client Email: {client_email}")
+        print(f"   Private Key Length: {len(private_key)} chars")
+        
+        scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
         creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
         client = gspread.authorize(creds)
         print("✅ Google authorization successful")
         
         # Open spreadsheet
         sheet_name = "NGX Trading Journal"
-        print(f" Opening sheet: '{sheet_name}'...")
+        print(f"📂 Opening sheet: '{sheet_name}'...")
         sheet = client.open(sheet_name)
+        print("✅ Sheet opened")
         
         # Access SignalHistory tab
         print("📑 Accessing SignalHistory tab...")
         signal_tab = sheet.worksheet("SignalHistory")
+        print("✅ Tab accessed")
         
-        # Prepare rows to append
+        # Prepare rows
         rows_to_add = []
         for _, row in signals_df.iterrows():
             rows_to_add.append([
@@ -82,9 +141,9 @@ def log_signals_to_sheet(signals_df, date_str):
                 row['Reasons']
             ])
         
-        # Append to sheet
+        # Append
         if rows_to_add:
-            print(f"📊 Appending {len(rows_to_add)} rows to Google Sheets...")
+            print(f"📊 Appending {len(rows_to_add)} rows...")
             signal_tab.append_rows(rows_to_add, value_input_option='USER_ENTERED')
             print(f"✅ Successfully logged {len(rows_to_add)} signals to Google Sheets")
             return True
@@ -93,36 +152,30 @@ def log_signals_to_sheet(signals_df, date_str):
             return False
             
     except gspread.exceptions.SpreadsheetNotFound:
-        print("❌ ERROR: Spreadsheet 'NGX Trading Journal' not found. Check the name.")
+        print(f"❌ Spreadsheet '{sheet_name}' not found")
         return False
     except gspread.exceptions.WorksheetNotFound:
-        print("❌ ERROR: Worksheet 'SignalHistory' not found. Create the tab.")
-        return False
-    except gspread.exceptions.APIError as e:
-        # Catches Permission Denied / Auth Errors
-        if "403" in str(e):
-            print("❌ ERROR: Access Denied (403). Did you share the sheet with the Service Account email?")
-        else:
-            print(f"❌ Google API Error: {e}")
+        print("❌ Worksheet 'SignalHistory' not found")
         return False
     except Exception as e:
-        print(f"❌ Google Sheets error: {e}")
+        print(f"❌ Google Sheets error: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def run_alerts():
     lagos_tz = pytz.timezone('Africa/Lagos')
     start_time = datetime.now(lagos_tz)
-    print(f"🚀 Workflow started at: {start_time.strftime('%Y-%m-%d %H:%M:%S')} WAT")
+    print(f"\n🚀 Workflow started at: {start_time.strftime('%Y-%m-%d %H:%M:%S')} WAT\n")
     
     try:
         print("📊 Fetching NGX signals...")
         signals_df, status_msg = generate_ngx_signals()
-        
-        print(f"📈 Signals fetched: {len(signals_df)} stocks")
+        print(f"📈 Generated {len(signals_df)} signals\n")
         
         fx_risk = get_fx_risk_alert()
         
-        # Build Telegram message
+        # Build message
         today = datetime.now().strftime("%B %d, %Y")
         title = f"🇳 *NGX SIGNALS - {today}*"
         
@@ -131,12 +184,12 @@ def run_alerts():
         if buy_signals is None or buy_signals.empty:
             message = f"{title}\n\n⏸️ *No BUY signals meet threshold today.*\n\n📊 Market conditions are neutral/bearish.\n💡 Stay patient for high-conviction setups (≥75% strength).\n\nℹ️ {status_msg}"
         else:
-            message = f"{title}\n\n *Top {min(5, len(buy_signals))} BUY Signals:*\n\n"
+            message = f"{title}\n\n🎯 *Top {min(5, len(buy_signals))} BUY Signals:*\n\n"
             for _, row in buy_signals.head(5).iterrows():
                 message += f"🟢 *{row['Ticker']}*\n"
                 message += f"   💰 Price: ₦{row['Price(₦)']:,.2f}\n"
                 message += f"   📊 Strength: {row['Strength(%)']}%\n"
-                message += f"   🎯 TP: ₦{row['Take_Profit']:,.2f} (+30%)\n"
+                message += f"   🎯 TP: {row['Take_Profit']:,.2f} (+30%)\n"
                 message += f"   🛑 SL: ₦{row['Stop_Loss']:,.2f} (-7%)\n\n"
             if len(buy_signals) > 5:
                 message += f" and {len(buy_signals) - 5} more signals\n\n"
@@ -149,22 +202,20 @@ def run_alerts():
         message += "\n📊 *Dashboard:* https://ngx-trading-dashboard.streamlit.app"
         message += "\n\n⏰ *Sent at:* " + datetime.now(lagos_tz).strftime("%H:%M WAT")
         
-        # Send Telegram
-        print("\n📤 Sending Telegram alert...")
+        print("📤 Sending Telegram...")
         send_telegram_alert(message)
         
-        # Log to Google Sheets
         print("\n📝 Logging to Google Sheets...")
         date_str = datetime.now().strftime("%Y-%m-%d")
         log_signals_to_sheet(signals_df, date_str)
         
         end_time = datetime.now(lagos_tz)
-        duration = (end_time - start_time).total_seconds()
-        
-        print(f"\n✅ Workflow complete. Duration: {duration:.1f}s")
+        print(f"\n✅ Complete. Duration: {(end_time - start_time).total_seconds():.1f}s")
         
     except Exception as e:
         print(f"\n❌ CRITICAL ERROR: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     run_alerts()
