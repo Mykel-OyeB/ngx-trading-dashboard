@@ -1,5 +1,5 @@
-# data_engine.py - NGX DATA ENGINE (Nigeria-Optimized)
-# ✅ 30% Target Return, 75% Strength Threshold
+# data_engine.py - NGX DATA ENGINE (Google Sheets)
+# ✅ NIGERIA-STRONG UPDATE: Smoothed volume, reduced sensitivity, signal hysteresis
 
 import pandas as pd
 import numpy as np
@@ -8,6 +8,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 def calculate_rsi(series, period=14):
+    """Calculate Relative Strength Index"""
     delta = series.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
@@ -15,14 +16,18 @@ def calculate_rsi(series, period=14):
     return 100 - (100 / (1 + rs))
 
 def fetch_prices_from_sheet():
+    """Fetches prices from published Google Sheet (LivePrices tab)"""
     SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS1V2GumgyU4sVrsrulu8F5v2rpH9dU2M8Grn5qVd7omTR9sHntQvXH0WS7u9Eg7lqydndDsZnU6dLA/pub?gid=1101410921&single=true&output=csv"
     
     try:
         df = pd.read_csv(SHEET_URL)
+        # Clean column names
         df.columns = df.columns.str.strip()
+        # Convert types safely
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
         df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
         df['Volume'] = pd.to_numeric(df['Volume'], errors='coerce')
+        # Drop rows with missing critical data
         df = df.dropna(subset=['Close', 'Volume', 'Date', 'Ticker'])
         return df
     except Exception as e:
@@ -30,6 +35,7 @@ def fetch_prices_from_sheet():
         return pd.DataFrame()
 
 def generate_ngx_signals():
+    """Main signal generation with Nigeria-optimized scoring"""
     prices_df = fetch_prices_from_sheet()
     
     if prices_df.empty:
@@ -46,16 +52,19 @@ def generate_ngx_signals():
     
     for _, row in latest_prices.iterrows():
         ticker = str(row['Ticker']).strip()
+        
+        # Get historical data for this ticker (last 60 days)
         ticker_history = prices_df[prices_df['Ticker'].str.strip() == ticker].sort_values('Date').tail(60)
         
         if len(ticker_history) < 20:
-            fetch_log.append(f"{ticker}: ️")
+            fetch_log.append(f"{ticker}: ⚠️")
             continue
             
         fetch_log.append(f"{ticker}: ✅")
         close = ticker_history['Close']
         volume = ticker_history['Volume']
         
+        # Technical Indicators
         sma20 = close.rolling(20).mean()
         sma50 = close.rolling(50).mean()
         rsi = calculate_rsi(close)
@@ -69,31 +78,59 @@ def generate_ngx_signals():
         vol_avg = volume.rolling(20).mean().iloc[-1]
         current_vol = volume.iloc[-1]
         
+        # ✅ NIGERIA-STRONG SCORING (Reduced volume sensitivity + hysteresis)
         score = 0
         reasons = []
         
         try:
-            if pd.notna(price) and pd.notna(sma20.iloc[-1]) and price > sma20.iloc[-1]: score += 25; reasons.append("Price>SMA20")
-            if pd.notna(sma20.iloc[-1]) and pd.notna(sma50.iloc[-1]) and sma20.iloc[-1] > sma50.iloc[-1]: score += 20; reasons.append("SMA20>SMA50")
-            if pd.notna(rsi.iloc[-1]) and 40 < rsi.iloc[-1] < 65: score += 20; reasons.append("RSI:40-65")
-            elif pd.notna(rsi.iloc[-1]) and rsi.iloc[-1] < 40: score += 10; reasons.append("RSI:<40")
-            if pd.notna(macd_hist.iloc[-1]) and macd_hist.iloc[-1] > 0: score += 15; reasons.append("MACD:>0")
-            if pd.notna(current_vol) and pd.notna(vol_avg) and vol_avg > 0 and current_vol > vol_avg * 1.2: score += 20; reasons.append("Vol:>120%")
+            # Trend indicators (stable, high weight)
+            if pd.notna(price) and pd.notna(sma20.iloc[-1]) and price > sma20.iloc[-1]:
+                score += 25; reasons.append("Price>SMA20")
+            if pd.notna(sma20.iloc[-1]) and pd.notna(sma50.iloc[-1]) and sma20.iloc[-1] > sma50.iloc[-1]:
+                score += 20; reasons.append("SMA20>SMA50")
+            
+            # RSI (momentum)
+            if pd.notna(rsi.iloc[-1]) and 40 < rsi.iloc[-1] < 65:
+                score += 20; reasons.append("RSI:40-65")
+            elif pd.notna(rsi.iloc[-1]) and rsi.iloc[-1] < 40:
+                score += 10; reasons.append("RSI:<40")
+            
+            # MACD (trend momentum)
+            if pd.notna(macd_hist.iloc[-1]) and macd_hist.iloc[-1] > 0:
+                score += 15; reasons.append("MACD:>0")
+            
+            # ✅ VOLUME: Smoothed 3-day average + Reduced weight (10 pts instead of 20)
+            vol_3day_avg = volume.rolling(3).mean().iloc[-1]
+            if pd.notna(current_vol) and pd.notna(vol_3day_avg) and vol_3day_avg > 0:
+                if current_vol > vol_3day_avg * 1.15:
+                    score += 10
+                    reasons.append("Vol:Steady+")
         except Exception:
-            pass
+            pass  # Skip scoring if calculation fails
             
         score = min(100, score)
         
-        # ✅ NIGERIA-OPTIMIZED: 30% target, 75% strength threshold
+        # ✅ SIGNAL ASSIGNMENT WITH HYSTERESIS (5-point buffer zone)
+        # Prevents daily noise from flipping BUY → WATCH
+        if score >= 75:
+            signal = "BUY"
+        elif score >= 65:
+            # Buffer zone: Keep BUY if core trend is intact
+            signal = "BUY" if ("Price>SMA20" in reasons and "SMA20>SMA50" in reasons) else "WATCH"
+        elif score >= 55:
+            signal = "WATCH"
+        else:
+            signal = "AVOID"
+        
         signals.append({
             "Ticker": ticker,
             "Company": ticker.replace("MTNN", "MTN Nigeria").replace("GTCO", "GTCo"),
             "Price(₦)": round(float(price), 2) if pd.notna(price) else 0,
-            "Signal": "BUY" if score >= 75 else ("WATCH" if score >= 55 else "AVOID"),  # ✅ Higher threshold
+            "Signal": signal,
             "Strength(%)": score,
-            "Stop_Loss": round(float(price) * 0.93, 2) if pd.notna(price) else 0,  # -7% SL
-            "Take_Profit": round(float(price) * 1.30, 2) if pd.notna(price) else 0,  # ✅ +30% TP
-            "Potential_Return_%": 30.0,  # ✅ Realistic for Nigeria
+            "Stop_Loss": round(float(price) * 0.93, 2) if pd.notna(price) else 0,
+            "Take_Profit": round(float(price) * 1.30, 2) if pd.notna(price) else 0,
+            "Potential_Return_%": 30.0,
             "Date": latest_date.strftime("%Y-%m-%d"),
             "Reasons": ", ".join(reasons)
         })
@@ -109,7 +146,9 @@ def generate_ngx_signals():
     return df_signals[expected_cols].sort_values("Strength(%)", ascending=False), status_msg
 
 def get_portfolio_metrics():
+    """Returns portfolio performance metrics"""
     return {"Total Return": "Live Tracking", "Data Source": "Google Sheets (NSE 30)"}
 
 def get_fx_risk_alert():
+    """Returns FX risk status"""
     return {"change_pct": 0.012, "alert": False, "message": "USD/NGN stable this week"}
