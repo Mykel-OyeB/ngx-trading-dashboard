@@ -1,63 +1,32 @@
 name: Daily NGX Alerts
 
-# Force schedule activation
-
 on:
   schedule:
     - cron: '0 7 * * 1-5'
   workflow_dispatch:
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   send-signals:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    - uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
-    # 🔧 FIX: Added yfinance to the installation list
     - name: Install dependencies
-      run: |
-        pip install pandas numpy requests yfinance
+      run: pip install -r requirements.txt
 
-    # 🔍 Verification Step (Safe)
-    - name: Verify GitHub Secrets
-      env:
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: |
-        echo "=== SECRET VERIFICATION ==="
-        if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
-          echo "❌ TELEGRAM_BOT_TOKEN is MISSING"
-        else
-          echo "✅ TELEGRAM_BOT_TOKEN is present"
-        fi
-        if [ -z "$TELEGRAM_CHAT_ID" ]; then
-          echo "❌ TELEGRAM_CHAT_ID is MISSING"
-        else
-          echo "✅ TELEGRAM_CHAT_ID is present"
-        fi
-        echo "==========================="
-
-    - name: Test Telegram Connection
-      env:
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: |
-        curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
-        -d "chat_id=$TELEGRAM_CHAT_ID&text=🟢 NGX Bot Online - $(date)" | grep -q '"ok":true' && \
-        echo "✅ Telegram connection verified" || echo "❌ Telegram connection failed"
-        
     - name: Run alerts
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        GCP_PRIVATE_KEY_ID: ${{ secrets.GCP_PRIVATE_KEY_ID }}
+        GCP_PRIVATE_KEY: ${{ secrets.GCP_PRIVATE_KEY }}
+        GCP_CLIENT_EMAIL: ${{ secrets.GCP_CLIENT_EMAIL }}
+        GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
+        GCP_CLIENT_CERT_URL: ${{ secrets.GCP_CLIENT_CERT_URL }}
       run: python alerts.py
