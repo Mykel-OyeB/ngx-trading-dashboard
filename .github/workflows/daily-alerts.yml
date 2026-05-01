@@ -19,6 +19,13 @@ jobs:
     - name: Install dependencies
       run: pip install -r requirements.txt
 
+    - name: Debug Secrets
+      run: |
+        echo "Checking secrets..."
+        if [ -z "${{ secrets.GCP_PROJECT_ID }}" ]; then echo "❌ GCP_PROJECT_ID missing"; else echo "✅ GCP_PROJECT_ID present"; fi
+        if [ -z "${{ secrets.GCP_PRIVATE_KEY }}" ]; then echo "❌ GCP_PRIVATE_KEY missing"; else echo "✅ GCP_PRIVATE_KEY present (length: ${#SECRETS_GCP_PRIVATE_KEY})"; fi
+        if [ -z "${{ secrets.GCP_CLIENT_EMAIL }}" ]; then echo "❌ GCP_CLIENT_EMAIL missing"; else echo "✅ GCP_CLIENT_EMAIL present"; fi
+
     - name: Run alerts
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
