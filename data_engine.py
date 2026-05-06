@@ -1,5 +1,5 @@
 # data_engine.py - NGX DATA ENGINE (Google Sheets)
-# ✅ NIGERIA-STRONG UPDATE: Smoothed volume, reduced sensitivity, signal hysteresis
+# ✅ NIGERIA-STRONG: Smoothed volume, hysteresis, + indicator transparency columns
 
 import pandas as pd
 import numpy as np
@@ -21,13 +21,10 @@ def fetch_prices_from_sheet():
     
     try:
         df = pd.read_csv(SHEET_URL)
-        # Clean column names
         df.columns = df.columns.str.strip()
-        # Convert types safely
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
         df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
         df['Volume'] = pd.to_numeric(df['Volume'], errors='coerce')
-        # Drop rows with missing critical data
         df = df.dropna(subset=['Close', 'Volume', 'Date', 'Ticker'])
         return df
     except Exception as e:
@@ -35,7 +32,7 @@ def fetch_prices_from_sheet():
         return pd.DataFrame()
 
 def generate_ngx_signals():
-    """Main signal generation with Nigeria-optimized scoring"""
+    """Main signal generation with Nigeria-optimized scoring + indicator outputs"""
     prices_df = fetch_prices_from_sheet()
     
     if prices_df.empty:
@@ -52,8 +49,6 @@ def generate_ngx_signals():
     
     for _, row in latest_prices.iterrows():
         ticker = str(row['Ticker']).strip()
-        
-        # Get historical data for this ticker (last 60 days)
         ticker_history = prices_df[prices_df['Ticker'].str.strip() == ticker].sort_values('Date').tail(60)
         
         if len(ticker_history) < 20:
@@ -78,50 +73,41 @@ def generate_ngx_signals():
         vol_avg = volume.rolling(20).mean().iloc[-1]
         current_vol = volume.iloc[-1]
         
-        # ✅ NIGERIA-STRONG SCORING (Reduced volume sensitivity + hysteresis)
+        # Nigeria-Strong Scoring
         score = 0
         reasons = []
         
         try:
-            # Trend indicators (stable, high weight)
             if pd.notna(price) and pd.notna(sma20.iloc[-1]) and price > sma20.iloc[-1]:
                 score += 25; reasons.append("Price>SMA20")
             if pd.notna(sma20.iloc[-1]) and pd.notna(sma50.iloc[-1]) and sma20.iloc[-1] > sma50.iloc[-1]:
                 score += 20; reasons.append("SMA20>SMA50")
-            
-            # RSI (momentum)
             if pd.notna(rsi.iloc[-1]) and 40 < rsi.iloc[-1] < 65:
                 score += 20; reasons.append("RSI:40-65")
             elif pd.notna(rsi.iloc[-1]) and rsi.iloc[-1] < 40:
                 score += 10; reasons.append("RSI:<40")
-            
-            # MACD (trend momentum)
             if pd.notna(macd_hist.iloc[-1]) and macd_hist.iloc[-1] > 0:
                 score += 15; reasons.append("MACD:>0")
-            
-            # ✅ VOLUME: Smoothed 3-day average + Reduced weight (10 pts instead of 20)
             vol_3day_avg = volume.rolling(3).mean().iloc[-1]
             if pd.notna(current_vol) and pd.notna(vol_3day_avg) and vol_3day_avg > 0:
                 if current_vol > vol_3day_avg * 1.15:
-                    score += 10
-                    reasons.append("Vol:Steady+")
+                    score += 10; reasons.append("Vol:Steady+")
         except Exception:
-            pass  # Skip scoring if calculation fails
+            pass
             
         score = min(100, score)
         
-        # ✅ SIGNAL ASSIGNMENT WITH HYSTERESIS (5-point buffer zone)
-        # Prevents daily noise from flipping BUY → WATCH
+        # Signal assignment with hysteresis
         if score >= 75:
             signal = "BUY"
         elif score >= 65:
-            # Buffer zone: Keep BUY if core trend is intact
             signal = "BUY" if ("Price>SMA20" in reasons and "SMA20>SMA50" in reasons) else "WATCH"
         elif score >= 55:
             signal = "WATCH"
         else:
             signal = "AVOID"
         
+        # ✅ APPEND SIGNAL + INDICATOR VALUES
         signals.append({
             "Ticker": ticker,
             "Company": ticker.replace("MTNN", "MTN Nigeria").replace("GTCO", "GTCo"),
@@ -132,11 +118,21 @@ def generate_ngx_signals():
             "Take_Profit": round(float(price) * 1.30, 2) if pd.notna(price) else 0,
             "Potential_Return_%": 30.0,
             "Date": latest_date.strftime("%Y-%m-%d"),
-            "Reasons": ", ".join(reasons)
+            "Reasons": ", ".join(reasons),
+            "SMA20": round(float(sma20.iloc[-1]), 2) if pd.notna(sma20.iloc[-1]) else 0,
+            "SMA50": round(float(sma50.iloc[-1]), 2) if pd.notna(sma50.iloc[-1]) else 0,
+            "RSI": round(float(rsi.iloc[-1]), 1) if pd.notna(rsi.iloc[-1]) else 0,
+            "MACD_Hist": round(float(macd_hist.iloc[-1]), 4) if pd.notna(macd_hist.iloc[-1]) else 0
         })
         
     df_signals = pd.DataFrame(signals)
-    expected_cols = ["Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", "Stop_Loss", "Take_Profit", "Potential_Return_%", "Date", "Reasons"]
+    
+    # ✅ EXPECTED COLUMNS INCLUDE INDICATORS
+    expected_cols = [
+        "Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", 
+        "Stop_Loss", "Take_Profit", "Potential_Return_%", "Date", "Reasons",
+        "SMA20", "SMA50", "RSI", "MACD_Hist"
+    ]
     
     status_msg = f"✅ {len(signals)}/{len(latest_prices)} stocks analyzed from {latest_date.strftime('%Y-%m-%d')}. " + " | ".join(fetch_log[:10])
     
@@ -146,9 +142,7 @@ def generate_ngx_signals():
     return df_signals[expected_cols].sort_values("Strength(%)", ascending=False), status_msg
 
 def get_portfolio_metrics():
-    """Returns portfolio performance metrics"""
     return {"Total Return": "Live Tracking", "Data Source": "Google Sheets (NSE 30)"}
 
 def get_fx_risk_alert():
-    """Returns FX risk status"""
     return {"change_pct": 0.012, "alert": False, "message": "USD/NGN stable this week"}
