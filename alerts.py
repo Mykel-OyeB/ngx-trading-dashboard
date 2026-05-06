@@ -1,64 +1,23 @@
 # alerts.py - TELEGRAM + GOOGLE SHEETS LOGGING
-# ✅ Fixed: Better handling of GCP_PRIVATE_KEY newlines
+# ✅ Logs all signals + SMA20, SMA50, RSI, MACD_Hist to SignalHistory tab
 
 import requests
 import os
-import json
 from datetime import datetime
 import pytz
-
-print("🚀 Starting alerts.py...")
-
-# Check if secrets exist BEFORE importing gspread
-print("🔍 Checking environment variables...")
-secrets_to_check = [
-    'TELEGRAM_BOT_TOKEN',
-    'TELEGRAM_CHAT_ID', 
-    'GCP_PROJECT_ID',
-    'GCP_PRIVATE_KEY',
-    'GCP_CLIENT_EMAIL'
-]
-
-for secret in secrets_to_check:
-    value = os.getenv(secret)
-    if value:
-        if secret == 'GCP_PRIVATE_KEY':
-            print(f"✅ {secret}: Present ({len(value)} chars)")
-        elif secret in ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID']:
-            print(f"✅ {secret}: Present (masked)")
-        else:
-            print(f"✅ {secret}: {value}")
-    else:
-        print(f"❌ {secret}: MISSING")
-
-# Now import gspread
-try:
-    import gspread
-    from google.oauth2.service_account import Credentials
-    print("✅ Google libraries imported")
-except Exception as e:
-    print(f"❌ Failed to import Google libraries: {e}")
-    exit(1)
-
+import gspread
+from google.oauth2.service_account import Credentials
 from data_engine import generate_ngx_signals, get_fx_risk_alert
 
 def send_telegram_alert(message):
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    
     if not token or not chat_id:
         print("❌ Telegram credentials missing")
         return False
-        
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    
     try:
-        response = requests.post(url, json={
-            "chat_id": chat_id, 
-            "text": message, 
-            "parse_mode": "Markdown"
-        }, timeout=15)
-        
+        response = requests.post(url, json={"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}, timeout=15)
         if response.json().get("ok"):
             print("✅ Telegram alert sent successfully")
             return True
@@ -70,115 +29,66 @@ def send_telegram_alert(message):
         return False
 
 def log_signals_to_sheet(signals_df, date_str):
-    print("📝 Starting Google Sheets logging...")
-    
     try:
-        # Get credentials from environment
-        project_id = os.getenv('GCP_PROJECT_ID')
-        private_key = os.getenv('GCP_PRIVATE_KEY')
-        client_email = os.getenv('GCP_CLIENT_EMAIL')
-        private_key_id = os.getenv('GCP_PRIVATE_KEY_ID')
-        client_id = os.getenv('GCP_CLIENT_ID')
-        client_x509_cert_url = os.getenv('GCP_CLIENT_CERT_URL')
-        
-        # Check all required fields
-        if not all([project_id, private_key, client_email]):
-            print("❌ Missing required GCP credentials")
-            print(f"   project_id: {'✅' if project_id else '❌'}")
-            print(f"   private_key: {'✅' if private_key else '❌'} ({len(private_key) if private_key else 0} chars)")
-            print(f"   client_email: {'✅' if client_email else '❌'}")
-            return False
-        
-        # Fix private key newlines (common issue with GitHub Secrets)
-        private_key = private_key.replace('\\n', '\n')
-        
-        # Build credentials dict
+        scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
         creds_dict = {
             "type": "service_account",
-            "project_id": project_id,
-            "private_key_id": private_key_id or "unknown",
-            "private_key": private_key,
-            "client_email": client_email,
-            "client_id": client_id or "unknown",
+            "project_id": os.getenv("GCP_PROJECT_ID"),
+            "private_key_id": os.getenv("GCP_PRIVATE_KEY_ID"),
+            "private_key": os.getenv("GCP_PRIVATE_KEY").replace('\\n', '\n'),
+            "client_email": os.getenv("GCP_CLIENT_EMAIL"),
+            "client_id": os.getenv("GCP_CLIENT_ID"),
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": client_x509_cert_url or "https://www.googleapis.com/robot/v1/metadata/x509/" + client_email
+            "client_x509_cert_url": os.getenv("GCP_CLIENT_CERT_URL")
         }
         
-        print("🔑 Attempting to authorize with Google...")
-        print(f"   Project ID: {project_id}")
-        print(f"   Client Email: {client_email}")
-        print(f"   Private Key Length: {len(private_key)} chars")
-        
-        scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
         creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
         client = gspread.authorize(creds)
-        print("✅ Google authorization successful")
-        
-        # Open spreadsheet
-        sheet_name = "NGX Trading Journal"
-        print(f"📂 Opening sheet: '{sheet_name}'...")
-        sheet = client.open(sheet_name)
-        print("✅ Sheet opened")
-        
-        # Access SignalHistory tab
-        print("📑 Accessing SignalHistory tab...")
+        sheet = client.open("NGX Trading Journal")
         signal_tab = sheet.worksheet("SignalHistory")
-        print("✅ Tab accessed")
         
-        # Prepare rows
+        # ✅ APPEND ROWS INCLUDING 4 NEW INDICATOR COLUMNS
         rows_to_add = []
         for _, row in signals_df.iterrows():
             rows_to_add.append([
-                date_str,
-                row['Ticker'],
-                row['Signal'],
-                row['Strength(%)'],
-                row['Price(₦)'],
-                row['Stop_Loss'],
-                row['Take_Profit'],
-                row['Reasons']
+                date_str,                    # Date
+                row['Ticker'],               # Ticker
+                row['Signal'],               # Signal
+                row['Strength(%)'],          # Strength
+                row['Price(₦)'],             # Price
+                row['Stop_Loss'],            # Stop Loss
+                row['Take_Profit'],          # Take Profit
+                row['Reasons'],              # Reasons
+                row['SMA20'],                # ✅ NEW
+                row['SMA50'],                # ✅ NEW
+                row['RSI'],                  # ✅ NEW
+                row['MACD_Hist']             # ✅ NEW
             ])
         
-        # Append
         if rows_to_add:
-            print(f"📊 Appending {len(rows_to_add)} rows...")
             signal_tab.append_rows(rows_to_add, value_input_option='USER_ENTERED')
-            print(f"✅ Successfully logged {len(rows_to_add)} signals to Google Sheets")
+            print(f"✅ Logged {len(rows_to_add)} signals + indicators to Google Sheets")
             return True
-        else:
-            print("⚠️ No signals to log")
-            return False
-            
-    except gspread.exceptions.SpreadsheetNotFound:
-        print(f"❌ Spreadsheet '{sheet_name}' not found")
-        return False
-    except gspread.exceptions.WorksheetNotFound:
-        print("❌ Worksheet 'SignalHistory' not found")
         return False
     except Exception as e:
-        print(f"❌ Google Sheets error: {type(e).__name__}: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"❌ Google Sheets error: {e}")
         return False
 
 def run_alerts():
     lagos_tz = pytz.timezone('Africa/Lagos')
     start_time = datetime.now(lagos_tz)
-    print(f"\n🚀 Workflow started at: {start_time.strftime('%Y-%m-%d %H:%M:%S')} WAT\n")
+    print(f"🚀 Workflow started at: {start_time.strftime('%Y-%m-%d %H:%M:%S')} WAT")
     
     try:
         print("📊 Fetching NGX signals...")
         signals_df, status_msg = generate_ngx_signals()
-        print(f"📈 Generated {len(signals_df)} signals\n")
+        print(f"📈 Generated {len(signals_df)} signals")
         
         fx_risk = get_fx_risk_alert()
-        
-        # Build message
         today = datetime.now().strftime("%B %d, %Y")
         title = f"🇳 *NGX SIGNALS - {today}*"
-        
         buy_signals = signals_df[signals_df["Signal"] == "BUY"] if not signals_df.empty else None
         
         if buy_signals is None or buy_signals.empty:
@@ -186,11 +96,7 @@ def run_alerts():
         else:
             message = f"{title}\n\n🎯 *Top {min(5, len(buy_signals))} BUY Signals:*\n\n"
             for _, row in buy_signals.head(5).iterrows():
-                message += f"🟢 *{row['Ticker']}*\n"
-                message += f"   💰 Price: ₦{row['Price(₦)']:,.2f}\n"
-                message += f"   📊 Strength: {row['Strength(%)']}%\n"
-                message += f"   🎯 TP: {row['Take_Profit']:,.2f} (+30%)\n"
-                message += f"   🛑 SL: ₦{row['Stop_Loss']:,.2f} (-7%)\n\n"
+                message += f"🟢 *{row['Ticker']}*\n   💰 Price: ₦{row['Price(₦)']:,.2f}\n   📊 Strength: {row['Strength(%)']}%\n   🎯 TP: ₦{row['Take_Profit']:,.2f} (+30%)\n   🛑 SL: ₦{row['Stop_Loss']:,.2f} (-7%)\n\n"
             if len(buy_signals) > 5:
                 message += f" and {len(buy_signals) - 5} more signals\n\n"
         
@@ -202,7 +108,7 @@ def run_alerts():
         message += "\n📊 *Dashboard:* https://ngx-trading-dashboard.streamlit.app"
         message += "\n\n⏰ *Sent at:* " + datetime.now(lagos_tz).strftime("%H:%M WAT")
         
-        print("📤 Sending Telegram...")
+        print("\n Sending Telegram...")
         send_telegram_alert(message)
         
         print("\n📝 Logging to Google Sheets...")
@@ -214,8 +120,6 @@ def run_alerts():
         
     except Exception as e:
         print(f"\n❌ CRITICAL ERROR: {e}")
-        import traceback
-        traceback.print_exc()
 
 if __name__ == "__main__":
     run_alerts()
