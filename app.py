@@ -1,5 +1,5 @@
 # app.py - NGX Algorithmic Trading Dashboard
-# ✅ Updated: Displays SMA20, SMA50, RSI, MACD_Hist in signals table
+# ✅ Fixed: Column name typo corrected (Price(₦) instead of Price())
 
 import streamlit as st
 import pandas as pd
@@ -19,12 +19,12 @@ signals_df, fetch_status = generate_ngx_signals()
 sim_metrics = get_portfolio_metrics()
 fx_risk = get_fx_risk_alert()
 
-st.title("🇳🇬 NGX Algorithmic Trading Dashboard")
+st.title("🇬 NGX Algorithmic Trading Dashboard")
 st.markdown(f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} WAT")
 st.divider()
 
 # Sidebar
-st.sidebar.header(" System Status")
+st.sidebar.header("📊 System Status")
 st.sidebar.metric("Model Status", "✅ Live")
 st.sidebar.metric("Data Source", "Google Sheets (NSE 30)")
 
@@ -47,13 +47,13 @@ st.sidebar.info("📱 Add to Home Screen:\nSafari/Chrome → Share → Add to Ho
 tab1, tab2, tab3, tab4 = st.tabs(["🎯 Today's Signals", "📈 Performance", "⚙️ Risk & Settings", "📊 Analytics"])
 
 with tab1:
-    st.subheader(" Buy Signals - " + datetime.now().strftime("%B %d, %Y"))
+    st.subheader("🟢 Buy Signals - " + datetime.now().strftime("%B %d, %Y"))
     buy_signals = signals_df[signals_df["Signal"] == "BUY"].copy() if not signals_df.empty else pd.DataFrame()
     
     if not buy_signals.empty:
-        # ✅ UPDATED: Includes indicator columns
+        # ✅ FIXED: Corrected "Price()" to "Price(₦)" to match data_engine.py exactly
         display_cols = [
-            "Ticker", "Company", "Price()", "Strength(%)",
+            "Ticker", "Company", "Price(₦)", "Strength(%)",
             "SMA20", "SMA50", "RSI", "MACD_Hist",
             "Stop_Loss", "Take_Profit", "Potential_Return_%"
         ]
