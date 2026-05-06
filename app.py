@@ -1,5 +1,5 @@
 # app.py - NGX Algorithmic Trading Dashboard
-# ✅ Fixed: use_container_width=True, safe imports
+# ✅ Updated: Displays SMA20, SMA50, RSI, MACD_Hist in signals table
 
 import streamlit as st
 import pandas as pd
@@ -7,7 +7,7 @@ import numpy as np
 import plotly.express as px
 from datetime import datetime
 
-# Safe imports for analytics
+# Safe imports
 try:
     from data_engine import generate_ngx_signals, get_portfolio_metrics, get_fx_risk_alert, fetch_prices_from_sheet
 except Exception:
@@ -24,11 +24,11 @@ st.markdown(f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} W
 st.divider()
 
 # Sidebar
-st.sidebar.header("📊 System Status")
+st.sidebar.header(" System Status")
 st.sidebar.metric("Model Status", "✅ Live")
 st.sidebar.metric("Data Source", "Google Sheets (NSE 30)")
 
-if "" in fetch_status:
+if "❌" in fetch_status:
     st.sidebar.error(fetch_status)
 elif "⚠️" in fetch_status:
     st.sidebar.warning(fetch_status)
@@ -47,20 +47,25 @@ st.sidebar.info("📱 Add to Home Screen:\nSafari/Chrome → Share → Add to Ho
 tab1, tab2, tab3, tab4 = st.tabs(["🎯 Today's Signals", "📈 Performance", "⚙️ Risk & Settings", "📊 Analytics"])
 
 with tab1:
-    st.subheader("🟢 Buy Signals - " + datetime.now().strftime("%B %d, %Y"))
+    st.subheader(" Buy Signals - " + datetime.now().strftime("%B %d, %Y"))
     buy_signals = signals_df[signals_df["Signal"] == "BUY"].copy() if not signals_df.empty else pd.DataFrame()
     
     if not buy_signals.empty:
-        display_cols = ["Ticker", "Company", "Price(₦)", "Strength(%)", "Stop_Loss", "Take_Profit", "Potential_Return_%"]
+        # ✅ UPDATED: Includes indicator columns
+        display_cols = [
+            "Ticker", "Company", "Price()", "Strength(%)",
+            "SMA20", "SMA50", "RSI", "MACD_Hist",
+            "Stop_Loss", "Take_Profit", "Potential_Return_%"
+        ]
         st.dataframe(buy_signals[display_cols], use_container_width=True, hide_index=True)
-        st.caption("💡 BUY Threshold: Strength ≥ 75% | Return assumes 30% Take-Profit")
+        st.caption("💡 BUY Threshold: Strength ≥ 75% | Indicators shown for transparency")
     else:
         st.info("⏸️ No strong BUY signals today. Market conditions are neutral/bearish.")
         
     st.divider()
     st.subheader("📊 Market Overview (All Fetched Stocks)")
     if not signals_df.empty:
-        st.dataframe(signals_df[["Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", "Reasons"]], use_container_width=True, hide_index=True)
+        st.dataframe(signals_df[["Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", "Reasons", "RSI", "MACD_Hist"]], use_container_width=True, hide_index=True)
         st.caption("🟢 BUY (≥75%) | 🟠 WATCH (55-74%) | ⚪ AVOID (<55%)")
     else:
         st.warning("No data available. Ensure LivePrices tab has 20+ days of history.")
@@ -84,14 +89,14 @@ with tab2:
     c4.metric("Win Rate", "54.2%", "500+ trades")
 
 with tab3:
-    st.subheader("️ Risk Management Rules")
+    st.subheader("⚠️ Risk Management Rules")
     c1, c2, c3 = st.columns(3)
     c1.metric("Max Position Size", "5%")
     c2.metric("Stop Loss", "7%")
     c3.metric("Take Profit", "30%")
     
     st.divider()
-    st.subheader("🔔 Alert & Execution Settings")
+    st.subheader(" Alert & Execution Settings")
     st.write(f"- **Signal Threshold:** 55% minimum to appear in overview")
     st.write(f"- **BUY Signal Strength:** ≥75% (high conviction only)")
     st.write(f"- **Alert Time:** 8:00 AM WAT (weekdays)")
@@ -101,11 +106,11 @@ with tab3:
     
     st.divider()
     st.warning("⚠️ Always verify prices with your broker before executing. Use LIMIT orders only.")
-    st.info(" See Operations Manual v1.1 for setup, trailing stops & troubleshooting.")
+    st.info("📖 See Operations Manual v2.1 for setup, trailing stops & troubleshooting.")
 
 with tab4:
     st.subheader("📊 Strategy Performance Analytics")
-    st.info("📅 Analytics will activate after 60 days of historical signal collection. Check back in June 2026!")
+    st.info("📅 Analytics will activate after 60 days of historical signal collection. Check back in July 2026!")
     st.write("Current system is collecting daily signals automatically. Once 60 days of data are logged, real backtesting metrics (Sharpe, Sortino, Calmar) will appear here.")
 
 st.divider()
