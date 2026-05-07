@@ -1,11 +1,14 @@
 # app.py - NGX Algorithmic Trading Dashboard
-# ✅ Fixed: Column name typo corrected (Price(₦) instead of Price())
+# ✅ NEW: Market News tab with RSS feed aggregation
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-from datetime import datetime
+from datetime import datetime, timedelta
+import feedparser
+import requests
+from bs4 import BeautifulSoup
 
 # Safe imports
 try:
@@ -19,7 +22,7 @@ signals_df, fetch_status = generate_ngx_signals()
 sim_metrics = get_portfolio_metrics()
 fx_risk = get_fx_risk_alert()
 
-st.title("🇬 NGX Algorithmic Trading Dashboard")
+st.title("🇳🇬 NGX Algorithmic Trading Dashboard")
 st.markdown(f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} WAT")
 st.divider()
 
@@ -43,15 +46,20 @@ else:
 
 st.sidebar.info("📱 Add to Home Screen:\nSafari/Chrome → Share → Add to Home Screen")
 
-# Tabs
-tab1, tab2, tab3, tab4 = st.tabs(["🎯 Today's Signals", "📈 Performance", "⚙️ Risk & Settings", "📊 Analytics"])
+# Tabs (NOW 5 TABS)
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "🎯 Today's Signals", 
+    "📈 Performance", 
+    "⚙️ Risk & Settings", 
+    "📊 Analytics",
+    "📰 Market News"  # ✅ NEW TAB
+])
 
 with tab1:
     st.subheader("🟢 Buy Signals - " + datetime.now().strftime("%B %d, %Y"))
     buy_signals = signals_df[signals_df["Signal"] == "BUY"].copy() if not signals_df.empty else pd.DataFrame()
     
     if not buy_signals.empty:
-        # ✅ FIXED: Corrected "Price()" to "Price(₦)" to match data_engine.py exactly
         display_cols = [
             "Ticker", "Company", "Price(₦)", "Strength(%)",
             "SMA20", "SMA50", "RSI", "MACD_Hist",
@@ -96,7 +104,7 @@ with tab3:
     c3.metric("Take Profit", "30%")
     
     st.divider()
-    st.subheader(" Alert & Execution Settings")
+    st.subheader("🔔 Alert & Execution Settings")
     st.write(f"- **Signal Threshold:** 55% minimum to appear in overview")
     st.write(f"- **BUY Signal Strength:** ≥75% (high conviction only)")
     st.write(f"- **Alert Time:** 8:00 AM WAT (weekdays)")
@@ -112,6 +120,97 @@ with tab4:
     st.subheader("📊 Strategy Performance Analytics")
     st.info("📅 Analytics will activate after 60 days of historical signal collection. Check back in July 2026!")
     st.write("Current system is collecting daily signals automatically. Once 60 days of data are logged, real backtesting metrics (Sharpe, Sortino, Calmar) will appear here.")
+
+# ✅ NEW TAB 5: MARKET NEWS
+with tab5:
+    st.subheader("📰 Market News & Economic Data")
+    
+    # RSS Feed Aggregator Function
+    def fetch_rss_feeds():
+        """Fetch news from multiple RSS feeds"""
+        feeds = {
+            "Nairametrics": "https://nairametrics.com/feed/",
+            "BusinessDay": "https://businessday.ng/feed/",
+            "Proshare": "https://proshare.co/news/rss.aspx",
+            "CNBC Africa": "https://www.cnbcafrica.com/feed/",
+            "NGX Announcements": "https://ngxgroup.com/market-announcements/feed/",
+            "CBN": "https://www.cbn.gov.ng/rss/news.xml",
+            "SEC Nigeria": "https://sec.gov.ng/feed/",
+            "Investing.com Nigeria": "https://www.investing.com/rss/nigeria_news.rss"
+        }
+        
+        all_articles = []
+        
+        for source, url in feeds.items():
+            try:
+                feed = feedparser.parse(url)
+                for entry in feed.entries[:5]:  # Get latest 5 from each source
+                    all_articles.append({
+                        "Timestamp": entry.get("published", "N/A"),
+                        "Source": source,
+                        "Headline": entry.get("title", "No title"),
+                        "Link": entry.get("link", "#"),
+                        "Category": "General"
+                    })
+            except Exception as e:
+                print(f"Error fetching {source}: {e}")
+                continue
+        
+        return pd.DataFrame(all_articles)
+    
+    # Fetch and display news
+    with st.spinner("📡 Fetching latest news..."):
+        news_df = fetch_rss_feeds()
+    
+    if not news_df.empty:
+        # Filter options
+        st.subheader("🔍 Filter News")
+        col1, col2 = st.columns(2)
+        with col1:
+            selected_sources = st.multiselect(
+                "Select Sources",
+                options=news_df["Source"].unique(),
+                default=news_df["Source"].unique()[:3]
+            )
+        with col2:
+            search_term = st.text_input("🔎 Search Headlines", "")
+        
+        # Apply filters
+        filtered_news = news_df[news_df["Source"].isin(selected_sources)]
+        if search_term:
+            filtered_news = filtered_news[filtered_news["Headline"].str.contains(search_term, case=False)]
+        
+        # Display news
+        st.divider()
+        st.subheader(f"📰 Latest News ({len(filtered_news)} articles)")
+        
+        for _, row in filtered_news.iterrows():
+            with st.container():
+                st.markdown(f"""
+                **{row['Headline']}**  
+                📌 *{row['Source']}* | 🕐 {row['Timestamp']}  
+                🔗 [Read More]({row['Link']})
+                """)
+                st.divider()
+    else:
+        st.warning("⚠️ Unable to fetch news feeds. Please try again later.")
+    
+    # Economic Calendar Section
+    st.divider()
+    st.subheader("📅 Upcoming Economic Events (Nigeria)")
+    
+    # Static economic calendar (you can update this manually or automate later)
+    econ_events = pd.DataFrame({
+        "Date": ["2026-05-15", "2026-05-20", "2026-06-01", "2026-06-15"],
+        "Event": ["CBN MPC Meeting", "NBS Inflation Data", "FX Auction Results", "GDP Release Q1 2026"],
+        "Impact": ["High", "High", "Medium", "High"],
+        "Previous": ["18.75%", "33.9%", "₦1,450/$", "2.7%"],
+        "Forecast": ["Hold", "34.2%", "₦1,470/$", "3.1%"]
+    })
+    
+    st.dataframe(econ_events, use_container_width=True, hide_index=True)
+    
+    st.info("💡 **Tip:** High-impact events often cause market volatility. Consider reducing position size ahead of these dates.")
 
 st.divider()
 st.caption("Data: Google Sheets (NSE 30) | Model: Technical Scoring | **Not financial advice - DYOR**")
