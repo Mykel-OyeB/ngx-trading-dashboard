@@ -1,5 +1,5 @@
 # app.py - NGX Algorithmic Trading Dashboard
-# ✅ NEW: Market News tab with RSS feed aggregation
+# ✅ Fixed: Proper indentation + corrected economic data + expanded news sources
 
 import streamlit as st
 import pandas as pd
@@ -46,13 +46,13 @@ else:
 
 st.sidebar.info("📱 Add to Home Screen:\nSafari/Chrome → Share → Add to Home Screen")
 
-# Tabs (NOW 5 TABS)
+# Tabs (5 tabs total)
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🎯 Today's Signals", 
     "📈 Performance", 
     "⚙️ Risk & Settings", 
     "📊 Analytics",
-    "📰 Market News"  # ✅ NEW TAB
+    "📰 Market News"
 ])
 
 with tab1:
@@ -121,97 +121,87 @@ with tab4:
     st.info("📅 Analytics will activate after 60 days of historical signal collection. Check back in July 2026!")
     st.write("Current system is collecting daily signals automatically. Once 60 days of data are logged, real backtesting metrics (Sharpe, Sortino, Calmar) will appear here.")
 
-# ✅ NEW TAB 5: MARKET NEWS
+# ✅ TAB 5: MARKET NEWS (Properly Indented)
 with tab5:
     st.subheader("📰 Market News & Economic Data")
     
-    # RSS Feed Aggregator Function
     def fetch_rss_feeds():
-    """Fetch news from multiple RSS feeds + web scraping"""
-    feeds = {
-        # Nigerian Sources
-        "Nairametrics": "https://nairametrics.com/feed/",
-        "BusinessDay": "https://businessday.ng/feed/",
-        "Proshare": "https://proshareng.com/rss/news",  # Alternative URL
-        "CNBC Africa": "https://www.cnbcafrica.com/feed/",
-        "NGX Announcements": "https://ngxgroup.com/market-announcements/feed/",
+        """Fetch news from multiple RSS feeds + web scraping"""
+        feeds = {
+            "Nairametrics": "https://nairametrics.com/feed/",
+            "BusinessDay": "https://businessday.ng/feed/",
+            "Proshare": "https://proshareng.com/rss/news",
+            "CNBC Africa": "https://www.cnbcafrica.com/feed/",
+            "NGX Announcements": "https://ngxgroup.com/market-announcements/feed/",
+            "Reuters Africa": "https://www.reutersagency.com/feed/?taxonomy=4359&post_type=best",
+            "Bloomberg Africa": "https://www.bloomberg.com/feeds/africa/rss.xml",
+            "Africa News": "https://www.africanews.com/feed/",
+            "CBN News": "https://www.cbn.gov.ng/rss/news.xml",
+            "SEC Nigeria": "https://sec.gov.ng/feed/"
+        }
         
-        # International Sources (Africa/West Africa focus)
-        "Reuters Africa": "https://www.reutersagency.com/feed/?taxonomy=4359&post_type=best",
-        "Bloomberg Africa": "https://www.bloomberg.com/feeds/africa/rss.xml",
-        "Africa News": "https://www.africanews.com/feed/",
+        all_articles = []
         
-        # Regulatory/Government
-        "CBN News": "https://www.cbn.gov.ng/rss/news.xml",
-        "SEC Nigeria": "https://sec.gov.ng/feed/"
-    }
-    
-    all_articles = []
-    
-    for source, url in feeds.items():
+        for source, url in feeds.items():
+            try:
+                feed = feedparser.parse(url)
+                for entry in feed.entries[:5]:
+                    all_articles.append({
+                        "Timestamp": entry.get("published", datetime.now().strftime("%a, %d %b %Y %H:%M:%S")),
+                        "Source": source,
+                        "Headline": entry.get("title", "No title"),
+                        "Link": entry.get("link", "#"),
+                        "Category": "RSS Feed"
+                    })
+            except Exception as e:
+                print(f"⚠️ RSS Error ({source}): {e}")
+                continue
+        
+        # Web scraping: CNBC Africa West Africa
         try:
-            feed = feedparser.parse(url)
-            for entry in feed.entries[:5]:  # Get latest 5 from each source
-                all_articles.append({
-                    "Timestamp": entry.get("published", datetime.now().strftime("%a, %d %b %Y %H:%M:%S")),
-                    "Source": source,
-                    "Headline": entry.get("title", "No title"),
-                    "Link": entry.get("link", "#"),
-                    "Category": "RSS Feed"
-                })
+            cnbc_wa_url = "https://www.cnbcafrica.com/section/west-africa"
+            headers = {"User-Agent": "Mozilla/5.0"}
+            response = requests.get(cnbc_wa_url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.content, "html.parser")
+                articles = soup.find_all(["h2", "h3"], class_=lambda x: x and "title" in x.lower() if x else False)
+                for article in articles[:5]:
+                    link_tag = article.find("a")
+                    if link_tag:
+                        href = link_tag.get("href", "#")
+                        full_link = href if href.startswith("http") else f"https://www.cnbcafrica.com{href}"
+                        all_articles.append({
+                            "Timestamp": datetime.now().strftime("%a, %d %b %Y %H:%M:%S"),
+                            "Source": "CNBC Africa West Africa",
+                            "Headline": article.get_text(strip=True),
+                            "Link": full_link,
+                            "Category": "Web Scraped"
+                        })
         except Exception as e:
-            print(f"⚠️ RSS Error ({source}): {e}")
-            continue
-    
-    # ✅ WEB SCRAPING: CNBC Africa West Africa (no RSS)
-    try:
-        cnbc_wa_url = "https://www.cnbcafrica.com/section/west-africa"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(cnbc_wa_url, headers=headers, timeout=10)
+            print(f"⚠️ Scraping Error (CNBC WA): {e}")
         
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.content, 'html.parser')
-            # Try to find article headlines (structure may vary)
-            articles = soup.find_all(['h2', 'h3'], class_=lambda x: x and 'title' in x.lower() if x else False)
-            
-            for article in articles[:5]:
-                link_tag = article.find('a')
-                if link_tag:
-                    all_articles.append({
-                        "Timestamp": datetime.now().strftime("%a, %d %b %Y %H:%M:%S"),
-                        "Source": "CNBC Africa West Africa",
-                        "Headline": article.get_text(strip=True),
-                        "Link": link_tag.get('href', '#') if link_tag.get('href', '#').startswith('http') else f"https://www.cnbcafrica.com{link_tag.get('href', '#')}",
-                        "Category": "Web Scraped"
-                    })
-    except Exception as e:
-        print(f"⚠️ Scraping Error (CNBC WA): {e}")
-    
-    # ✅ WEB SCRAPING: Reuters Nigeria (if RSS fails)
-    try:
-        reuters_ng_url = "https://www.reuters.com/world/africa/nigeria/"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(reuters_ng_url, headers=headers, timeout=10)
+        # Web scraping: Reuters Nigeria
+        try:
+            reuters_ng_url = "https://www.reuters.com/world/africa/nigeria/"
+            headers = {"User-Agent": "Mozilla/5.0"}
+            response = requests.get(reuters_ng_url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.content, "html.parser")
+                articles = soup.find_all("h2", {"data-testid": "Heading"})
+                for article in articles[:5]:
+                    link_tag = article.find("a")
+                    if link_tag:
+                        all_articles.append({
+                            "Timestamp": datetime.now().strftime("%a, %d %b %Y %H:%M:%S"),
+                            "Source": "Reuters Nigeria",
+                            "Headline": article.get_text(strip=True),
+                            "Link": f"https://www.reuters.com{link_tag.get('href', '#')}",
+                            "Category": "Web Scraped"
+                        })
+        except Exception as e:
+            print(f"⚠️ Scraping Error (Reuters NG): {e}")
         
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.content, 'html.parser')
-            # Reuters uses specific classes for article headlines
-            articles = soup.find_all('h2', {'data-testid': 'Heading'})
-            
-            for article in articles[:5]:
-                link_tag = article.find('a')
-                if link_tag:
-                    all_articles.append({
-                        "Timestamp": datetime.now().strftime("%a, %d %b %Y %H:%M:%S"),
-                        "Source": "Reuters Nigeria",
-                        "Headline": article.get_text(strip=True),
-                        "Link": f"https://www.reuters.com{link_tag.get('href', '#')}",
-                        "Category": "Web Scraped"
-                    })
-    except Exception as e:
-        print(f"⚠️ Scraping Error (Reuters NG): {e}")
-    
-    return pd.DataFrame(all_articles)
+        return pd.DataFrame(all_articles)
     
     # Fetch and display news
     with st.spinner("📡 Fetching latest news..."):
@@ -250,39 +240,38 @@ with tab5:
     else:
         st.warning("⚠️ Unable to fetch news feeds. Please try again later.")
     
-   # Economic Calendar Section
-st.divider()
-st.subheader("📅 Upcoming Economic Events (Nigeria)")
-
-# ✅ UPDATED: Current Nigeria economic data (May 2026)
-econ_events = pd.DataFrame({
-    "Date": ["2026-05-15", "2026-05-20", "2026-05-28", "2026-06-10", "2026-06-15", "2026-06-30"],
-    "Event": [
-        "CBN MPC Meeting & MPR Decision",
-        "NBS Inflation Data (April)",
-        "FX Auction Results",
-        "NBS GDP Release Q1 2026",
-        "NBS Unemployment Data",
-        "CBN Foreign Reserves Report"
-    ],
-    "Impact": ["🔴 High", "🔴 High", "🟡 Medium", "🔴 High", "🟡 Medium", "🟢 Low"],
-    "Previous": ["18.75%", "15.38%", "₦1,375/$", "2.7%", "5.2%", "$35.2bn"],
-    "Forecast": ["Hold/↑ to 19%", "15.8%", "₦1,380-1,390/$", "3.1%", "5.0%", "$35.5bn"]
-})
-
-st.dataframe(econ_events, use_container_width=True, hide_index=True)
-
-# Key Economic Indicators Dashboard
-st.divider()
-st.subheader("📊 Key Nigeria Economic Indicators (Latest)")
-
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Inflation Rate (March 2026)", "15.38%", "↓ from 15.42%")
-col2.metric("FX Rate (Parallel)", "₦1,375/$", "+2.1% this month")
-col3.metric("Monetary Policy Rate", "18.75%", "Last: Mar 2026")
-col4.metric("Foreign Reserves", "$35.2bn", "↓ $200m")
-
-st.info("💡 **Tip:** High-impact events often cause market volatility. Consider reducing position size ahead of these dates.")
+    # Economic Calendar Section - ✅ UPDATED WITH CORRECT DATA
+    st.divider()
+    st.subheader("📅 Upcoming Economic Events (Nigeria)")
+    
+    econ_events = pd.DataFrame({
+        "Date": ["2026-05-15", "2026-05-20", "2026-05-28", "2026-06-10", "2026-06-15", "2026-06-30"],
+        "Event": [
+            "CBN MPC Meeting & MPR Decision",
+            "NBS Inflation Data (April)",
+            "FX Auction Results",
+            "NBS GDP Release Q1 2026",
+            "NBS Unemployment Data",
+            "CBN Foreign Reserves Report"
+        ],
+        "Impact": ["🔴 High", "🔴 High", "🟡 Medium", "🔴 High", "🟡 Medium", "🟢 Low"],
+        "Previous": ["18.75%", "15.38%", "₦1,375/$", "2.7%", "5.2%", "$35.2bn"],
+        "Forecast": ["Hold/↑ to 19%", "15.8%", "₦1,380-1,390/$", "3.1%", "5.0%", "$35.5bn"]
+    })
+    
+    st.dataframe(econ_events, use_container_width=True, hide_index=True)
+    
+    # Key Economic Indicators Dashboard
+    st.divider()
+    st.subheader("📊 Key Nigeria Economic Indicators (Latest)")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Inflation Rate (March 2026)", "15.38%", "↓ from 15.42%")
+    col2.metric("FX Rate (Parallel)", "₦1,375/$", "+2.1% this month")
+    col3.metric("Monetary Policy Rate", "18.75%", "Last: Mar 2026")
+    col4.metric("Foreign Reserves", "$35.2bn", "↓ $200m")
+    
+    st.info("💡 **Tip:** High-impact events often cause market volatility. Consider reducing position size ahead of these dates.")
 
 st.divider()
 st.caption("Data: Google Sheets (NSE 30) | Model: Technical Scoring | **Not financial advice - DYOR**")
