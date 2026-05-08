@@ -132,15 +132,16 @@ with tab5:
         
         # === TIER 1: NIGERIAN RSS FEEDS (Primary Source) ===
         nigerian_feeds = {
-            "Nairametrics": "https://nairametrics.com/feed/",
-            "CNBC Africa": "https://www.cnbcafrica.com/feed/",
-            "Africa News": "https://www.africanews.com/feed/",
-            "Premium Times NG": "https://www.premiumtimesng.com/feed",
-            "Vanguard News NG": "https://www.vanguardngr.com/feed/",
-            "The Guardian NG": "https://guardian.ng/feed/",
-            "Punch Newspapers": "https://punchng.com/feed/",
-            "ThisDay Live": "https://www.thisdaylive.com/index.php/feed/",
-        }
+    "Nairametrics": "https://nairametrics.com/feed/",
+    "BusinessDay NG": "https://businessday.ng/feed/",
+    "CNBC Africa": "https://www.cnbcafrica.com/feed/",
+    "Africa News": "https://www.africanews.com/feed/",
+    "Premium Times NG": "https://www.premiumtimesng.com/feed",
+    "Vanguard News NG": "https://www.vanguardngr.com/feed/",
+    "The Guardian NG": "https://guardian.ng/feed/",
+    "Punch Newspapers": "https://punchng.com/feed/",
+    "ThisDay Live": "https://www.thisdaylive.com/index.php/feed/",
+}
         
         for source, url in nigerian_feeds.items():
             try:
