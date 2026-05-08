@@ -127,36 +127,91 @@ with tab5:
     
     # RSS Feed Aggregator Function
     def fetch_rss_feeds():
-        """Fetch news from multiple RSS feeds"""
-        feeds = {
-            "Nairametrics": "https://nairametrics.com/feed/",
-            "BusinessDay": "https://businessday.ng/feed/",
-            "Proshare": "https://proshare.co/news/rss.aspx",
-            "CNBC Africa": "https://www.cnbcafrica.com/feed/",
-            "NGX Announcements": "https://ngxgroup.com/market-announcements/feed/",
-            "CBN": "https://www.cbn.gov.ng/rss/news.xml",
-            "SEC Nigeria": "https://sec.gov.ng/feed/",
-            "Investing.com Nigeria": "https://www.investing.com/rss/nigeria_news.rss"
-        }
+    """Fetch news from multiple RSS feeds + web scraping"""
+    feeds = {
+        # Nigerian Sources
+        "Nairametrics": "https://nairametrics.com/feed/",
+        "BusinessDay": "https://businessday.ng/feed/",
+        "Proshare": "https://proshareng.com/rss/news",  # Alternative URL
+        "CNBC Africa": "https://www.cnbcafrica.com/feed/",
+        "NGX Announcements": "https://ngxgroup.com/market-announcements/feed/",
         
-        all_articles = []
+        # International Sources (Africa/West Africa focus)
+        "Reuters Africa": "https://www.reutersagency.com/feed/?taxonomy=4359&post_type=best",
+        "Bloomberg Africa": "https://www.bloomberg.com/feeds/africa/rss.xml",
+        "Africa News": "https://www.africanews.com/feed/",
         
-        for source, url in feeds.items():
-            try:
-                feed = feedparser.parse(url)
-                for entry in feed.entries[:5]:  # Get latest 5 from each source
+        # Regulatory/Government
+        "CBN News": "https://www.cbn.gov.ng/rss/news.xml",
+        "SEC Nigeria": "https://sec.gov.ng/feed/"
+    }
+    
+    all_articles = []
+    
+    for source, url in feeds.items():
+        try:
+            feed = feedparser.parse(url)
+            for entry in feed.entries[:5]:  # Get latest 5 from each source
+                all_articles.append({
+                    "Timestamp": entry.get("published", datetime.now().strftime("%a, %d %b %Y %H:%M:%S")),
+                    "Source": source,
+                    "Headline": entry.get("title", "No title"),
+                    "Link": entry.get("link", "#"),
+                    "Category": "RSS Feed"
+                })
+        except Exception as e:
+            print(f"⚠️ RSS Error ({source}): {e}")
+            continue
+    
+    # ✅ WEB SCRAPING: CNBC Africa West Africa (no RSS)
+    try:
+        cnbc_wa_url = "https://www.cnbcafrica.com/section/west-africa"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(cnbc_wa_url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'html.parser')
+            # Try to find article headlines (structure may vary)
+            articles = soup.find_all(['h2', 'h3'], class_=lambda x: x and 'title' in x.lower() if x else False)
+            
+            for article in articles[:5]:
+                link_tag = article.find('a')
+                if link_tag:
                     all_articles.append({
-                        "Timestamp": entry.get("published", "N/A"),
-                        "Source": source,
-                        "Headline": entry.get("title", "No title"),
-                        "Link": entry.get("link", "#"),
-                        "Category": "General"
+                        "Timestamp": datetime.now().strftime("%a, %d %b %Y %H:%M:%S"),
+                        "Source": "CNBC Africa West Africa",
+                        "Headline": article.get_text(strip=True),
+                        "Link": link_tag.get('href', '#') if link_tag.get('href', '#').startswith('http') else f"https://www.cnbcafrica.com{link_tag.get('href', '#')}",
+                        "Category": "Web Scraped"
                     })
-            except Exception as e:
-                print(f"Error fetching {source}: {e}")
-                continue
+    except Exception as e:
+        print(f"⚠️ Scraping Error (CNBC WA): {e}")
+    
+    # ✅ WEB SCRAPING: Reuters Nigeria (if RSS fails)
+    try:
+        reuters_ng_url = "https://www.reuters.com/world/africa/nigeria/"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(reuters_ng_url, headers=headers, timeout=10)
         
-        return pd.DataFrame(all_articles)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'html.parser')
+            # Reuters uses specific classes for article headlines
+            articles = soup.find_all('h2', {'data-testid': 'Heading'})
+            
+            for article in articles[:5]:
+                link_tag = article.find('a')
+                if link_tag:
+                    all_articles.append({
+                        "Timestamp": datetime.now().strftime("%a, %d %b %Y %H:%M:%S"),
+                        "Source": "Reuters Nigeria",
+                        "Headline": article.get_text(strip=True),
+                        "Link": f"https://www.reuters.com{link_tag.get('href', '#')}",
+                        "Category": "Web Scraped"
+                    })
+    except Exception as e:
+        print(f"⚠️ Scraping Error (Reuters NG): {e}")
+    
+    return pd.DataFrame(all_articles)
     
     # Fetch and display news
     with st.spinner("📡 Fetching latest news..."):
