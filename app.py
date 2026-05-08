@@ -121,25 +121,27 @@ with tab4:
     st.info("📅 Analytics will activate after 60 days of historical signal collection. Check back in July 2026!")
     st.write("Current system is collecting daily signals automatically. Once 60 days of data are logged, real backtesting metrics (Sharpe, Sortino, Calmar) will appear here.")
 
-# ✅ TAB 5: MARKET NEWS & ECONOMIC DATA
+# ✅ TAB 5: MARKET NEWS & ECONOMIC DATA (FOCUSED ON NIGERIA)
 with tab5:
     st.subheader("📰 Market News & Economic Data")
     
-    @st.cache_data(ttl=1800)  # Cache for 30 mins to avoid NewsAPI rate limits
-    def fetch_rss_feeds():
-        """Fetch news from NewsAPI + stable RSS feeds"""
+    @st.cache_data(ttl=1800)  # Cache for 30 mins
+    def fetch_news():
+        """Fetch Nigeria-focused financial/economic news"""
         all_articles = []
         
-        # 1. NEWSAPI (Primary source)
+        # 1. NEWSAPI - Nigeria Financial Markets Focus
         newsapi_key = st.secrets.get("NEWSAPI_KEY") or os.getenv("NEWSAPI_KEY")
         if newsapi_key:
             try:
+                # More specific query targeting Nigerian finance
                 url = "https://newsapi.org/v2/everything"
                 params = {
-                    "q": "Nigeria OR Africa finance OR economy OR NGX OR CBN OR Naira OR oil",
+                    "q": "(Nigeria AND (stock market OR NGX OR NSE OR CBN OR Naira OR forex OR bonds OR equities OR MPC OR inflation OR GDP))",
+                    "sources": "bloomberg,reuters,financial-times,the-economist",  # Premium financial sources
                     "language": "en",
                     "sortBy": "publishedAt",
-                    "pageSize": 12,
+                    "pageSize": 10,
                     "apiKey": newsapi_key
                 }
                 response = requests.get(url, params=params, timeout=10)
@@ -147,62 +149,111 @@ with tab5:
                 
                 if data.get("status") == "ok":
                     for article in data.get("articles", []):
-                        all_articles.append({
-                            "Timestamp": article.get("publishedAt", ""),
-                            "Source": article.get("source", {}).get("name", "NewsAPI"),
-                            "Headline": article.get("title", ""),
-                            "Link": article.get("url", "#"),
-                            "Category": "NewsAPI"
-                        })
-                    print(f"✅ NewsAPI fetched {len(data['articles'])} articles")
-                else:
-                    print(f"️ NewsAPI error: {data.get('message')}")
+                        # Double-check relevance
+                        title = article.get("title", "").lower()
+                        desc = article.get("description", "").lower()
+                        if any(kw in title or kw in desc for kw in ["nigeria", "naira", "cbn", "ngx", "lagos", "abuja"]):
+                            all_articles.append({
+                                "Timestamp": article.get("publishedAt", ""),
+                                "Source": article.get("source", {}).get("name", "NewsAPI"),
+                                "Headline": article.get("title", ""),
+                                "Link": article.get("url", "#"),
+                                "Category": "International"
+                            })
+                
+                # Second query: African business news
+                params["q"] = "(Nigeria OR West Africa) AND (business OR economy OR oil OR banking)"
+                params["sources"] = ""  # Clear source filter for broader African coverage
+                response = requests.get(url, params=params, timeout=10)
+                data = response.json()
+                
+                if data.get("status") == "ok":
+                    for article in data.get("articles", [])[:5]:
+                        title = article.get("title", "").lower()
+                        if any(kw in title for kw in ["nigeria", "naira", "cbn", "ngx", "lagos", "abuja", "west africa"]):
+                            all_articles.append({
+                                "Timestamp": article.get("publishedAt", ""),
+                                "Source": article.get("source", {}).get("name", "NewsAPI"),
+                                "Headline": article.get("title", ""),
+                                "Link": article.get("url", "#"),
+                                "Category": "Africa Business"
+                            })
+                            
             except Exception as e:
                 print(f"⚠️ NewsAPI failed: {e}")
         
-        # 2. RSS FEEDS (Fallback for Nigerian sources)
+        # 2. RSS FEEDS - Nigerian Sources (More Reliable)
         rss_feeds = {
             "Nairametrics": "https://nairametrics.com/feed/",
+            "BusinessDay NG": "https://businessday.ng/feed/",
+            "Proshare": "https://proshareng.com/rss/news",
             "CNBC Africa": "https://www.cnbcafrica.com/feed/",
-            "Africa News": "https://www.africanews.com/feed/",
             "NGX Announcements": "https://ngxgroup.com/market-announcements/feed/",
         }
-        
-        keywords = ["nigeria", "africa", "west africa", "ngx", "cbn", "naira", "oil", "bond", "equity", "market", "finance", "economy"]
         
         for source, url in rss_feeds.items():
             try:
                 feed = feedparser.parse(url)
                 if feed.entries:
-                    for entry in feed.entries[:3]:
-                        title = entry.get("title", "").lower()
-                        if any(kw in title for kw in keywords):
-                            all_articles.append({
-                                "Timestamp": entry.get("published", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-                                "Source": source,
-                                "Headline": entry.get("title", "No title"),
-                                "Link": entry.get("link", "#"),
-                                "Category": "RSS Feed"
-                            })
+                    for entry in feed.entries[:4]:
+                        all_articles.append({
+                            "Timestamp": entry.get("published", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+                            "Source": source,
+                            "Headline": entry.get("title", "No title"),
+                            "Link": entry.get("link", "#"),
+                            "Category": "Nigeria"
+                        })
             except Exception as e:
                 print(f"⚠️ RSS Error ({source}): {e}")
                 continue
         
-        # 3. Clean & sort
+        # 3. Jina AI Fallback - Scrape Nigerian Financial Sites
+        jina_urls = {
+            "Nairametrics Direct": "https://nairametrics.com",
+            "BusinessDay Markets": "https://businessday.ng/markets/",
+        }
+        
+        for source, url in jina_urls.items():
+            try:
+                jina_url = f"https://r.jina.ai/{url}"
+                response = requests.get(jina_url, timeout=10)
+                if response.status_code == 200:
+                    text = response.text
+                    # Extract headlines (lines that look like titles)
+                    lines = [line.strip() for line in text.split('\n') 
+                            if 30 < len(line.strip()) < 150 and not line.strip().startswith(('http', '©', 'All rights'))][:3]
+                    for line in lines:
+                        all_articles.append({
+                            "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "Source": source,
+                            "Headline": line,
+                            "Link": url,
+                            "Category": "Web Scrape"
+                        })
+            except Exception as e:
+                print(f"⚠️ Jina Error ({source}): {e}")
+                continue
+        
+        # Clean & sort
         if not all_articles:
             return pd.DataFrame()
             
         df = pd.DataFrame(all_articles)
+        
+        # Convert timestamps and sort
         df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce", utc=True)
+        df = df.dropna(subset=["Timestamp"])
         df = df.sort_values("Timestamp", ascending=False).reset_index(drop=True)
         df["Timestamp"] = df["Timestamp"].dt.strftime("%Y-%m-%d %H:%M")
+        
+        # Remove duplicates
         df = df.drop_duplicates(subset=["Headline"]).reset_index(drop=True)
         
         return df
     
     # Fetch and display
-    with st.spinner("📡 Fetching latest market news..."):
-        news_df = fetch_rss_feeds()
+    with st.spinner("📡 Fetching Nigeria market news..."):
+        news_df = fetch_news()
     
     if not news_df.empty:
         st.subheader("🔍 Filter News")
@@ -211,23 +262,23 @@ with tab5:
             selected_sources = st.multiselect(
                 "Select Sources",
                 options=news_df["Source"].unique(),
-                default=list(news_df["Source"].unique()[:3])
+                default=list(news_df["Source"].unique()[:4])
             )
         with col2:
-            search_term = st.text_input(" Search Headlines", "")
+            search_term = st.text_input("🔎 Search Headlines", "")
         
         filtered_news = news_df[news_df["Source"].isin(selected_sources)]
         if search_term:
             filtered_news = filtered_news[filtered_news["Headline"].str.contains(search_term, case=False)]
         
         st.divider()
-        st.subheader(f"📰 Latest News ({len(filtered_news)} articles)")
+        st.subheader(f"📰 Latest Nigeria Market News ({len(filtered_news)} articles)")
         
         for _, row in filtered_news.iterrows():
             with st.container():
                 st.markdown(f"""
                 **{row['Headline']}**  
-                 *{row['Source']}* | 🕐 {row['Timestamp']}  
+                📌 *{row['Source']}* | 🕐 {row['Timestamp']} | 📂 {row['Category']}  
                 🔗 [Read More]({row['Link']})
                 """)
                 st.divider()
@@ -248,9 +299,9 @@ with tab5:
             "NBS Unemployment/Labour Force Data",
             "CBN Foreign Reserves Report"
         ],
-        "Impact": ["🔴 High", " High", "🟡 Medium", " High", "🟡 Medium", " Low"],
-        "Previous": ["26.50%", "15.38%", "1,375/$", "2.7%", "5.2%", "$35.2bn"],
-        "Forecast": ["Hold/↑ to 27%", "15.8%", "1,380-1,395/$", "3.1%", "5.0%", "$35.5bn"]
+        "Impact": ["🔴 High", "🔴 High", "🟡 Medium", "🔴 High", "🟡 Medium", "🟢 Low"],
+        "Previous": ["26.50%", "15.38%", "₦1,375/$", "2.7%", "5.2%", "$35.2bn"],
+        "Forecast": ["Hold/↑ to 27%", "15.8%", "₦1,380-1,395/$", "3.1%", "5.0%", "$35.5bn"]
     })
     
     st.dataframe(econ_events, use_container_width=True, hide_index=True)
