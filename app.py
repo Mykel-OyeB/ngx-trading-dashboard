@@ -1,5 +1,5 @@
 # app.py - NGX Algorithmic Trading Dashboard
-# ✅ Updated: Smart Entry Zones, Chase Warning & Pullback Watch in Tab 1
+# ✅ Safe Import & Execution Zone Display
 
 import streamlit as st
 import pandas as pd
@@ -9,16 +9,21 @@ from datetime import datetime
 import feedparser
 import requests
 
+# ✅ Safe Import with Explicit Error Handling
 try:
     from data_engine import generate_ngx_signals, get_portfolio_metrics, get_fx_risk_alert
-except Exception: pass
+except Exception as e:
+    st.error(f" Import Error: {e}. Check data_engine.py syntax.")
+    st.stop()
 
-st.set_page_config(page_title="NGX Trading Signals", page_icon="", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="NGX Trading Signals", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
+
+# Generate Signals
 signals_df, fetch_status = generate_ngx_signals()
 sim_metrics = get_portfolio_metrics()
 fx_risk = get_fx_risk_alert()
 
-st.title("🇳🇬 NGX Algorithmic Trading Dashboard")
+st.title("🇳 NGX Algorithmic Trading Dashboard")
 st.markdown(f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} WAT")
 st.divider()
 
@@ -26,25 +31,24 @@ st.sidebar.header("📊 System Status")
 st.sidebar.metric("Model Status", "✅ Live")
 st.sidebar.metric("Data Source", "Google Sheets (NSE 30)")
 if "❌" in fetch_status: st.sidebar.error(fetch_status)
-elif "️" in fetch_status: st.sidebar.warning(fetch_status)
+elif "⚠️" in fetch_status: st.sidebar.warning(fetch_status)
 else: st.sidebar.success(fetch_status)
 st.sidebar.divider()
 if fx_risk["alert"]: st.sidebar.error(f"⚠️ FX RISK: {fx_risk['message']}")
 else: st.sidebar.success(f"✅ FX: {fx_risk['message']}")
-st.sidebar.info(" Add to Home Screen:\nSafari/Chrome → Share → Add to Home Screen")
+st.sidebar.info("📱 Add to Home Screen:\nSafari/Chrome → Share → Add to Home Screen")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎯 Today's Signals", " Performance", "⚙️ Risk & Settings", "📊 Analytics", "📰 Market News"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs([" Today's Signals", "📈 Performance", "⚙️ Risk & Settings", "📊 Analytics", "📰 Market News"])
 
 with tab1:
     st.subheader("🟢 Buy Signals - " + datetime.now().strftime("%B %d, %Y"))
     buy_signals = signals_df[signals_df["Signal"] == "BUY"].copy() if not signals_df.empty else pd.DataFrame()
     
     if not buy_signals.empty:
-        # ✅ UPDATED: Execution-focused columns moved to front for visibility
         display_cols = [
             "Ticker", "Company", "Price(₦)", "Strength(%)",
-            "Chase_Warning", "Pullback_Watch",  # ✅ Execution flags
-            "Entry_Zone_Low", "Entry_Zone_High",  # ✅ Fair entry range
+            "Chase_Warning", "Pullback_Watch",
+            "Entry_Zone_Low", "Entry_Zone_High",
             "Liquidity_Flag", "Event_Tag",
             "SMA20", "SMA50", "RSI", "MACD_Hist",
             "Stop_Loss", "Take_Profit", "Potential_Return_%"
@@ -78,11 +82,11 @@ with tab3:
     st.subheader("⚠️ Risk Rules")
     c1,c2,c3 = st.columns(3)
     c1.metric("Max Position", "5%"); c2.metric("Stop Loss", "7%"); c3.metric("Take Profit", "30%")
-    st.info("📖 See Operations Manual v2.1 for liquidity execution checklist & trailing stops.")
+    st.info(" See Operations Manual v2.1 for liquidity execution checklist & trailing stops.")
 
 with tab4:
     st.subheader("📊 Analytics")
-    st.info(" Activates after 60 days of signal history (~July 2026). Collecting data daily.")
+    st.info("📅 Activates after 60 days of signal history (~July 2026). Collecting data daily.")
 
 with tab5:
     st.subheader("📰 Market News & Economic Data")
@@ -106,7 +110,7 @@ with tab5:
     with st.spinner("📡 Fetching..."): news_df = fetch_news()
     if not news_df.empty:
         for _, r in news_df.iterrows():
-            st.markdown(f"**{r['Headline']}** |  *{r['Source']}* | 🔗 [Read]({r['Link']})")
+            st.markdown(f"**{r['Headline']}** | 📌 *{r['Source']}* | 🔗 [Read]({r['Link']})")
             st.divider()
     else: st.warning("⚠️ No feeds available.")
     
