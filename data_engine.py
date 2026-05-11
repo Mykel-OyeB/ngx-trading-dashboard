@@ -99,19 +99,21 @@ def generate_ngx_signals():
         else: signal = "AVOID"
         
         # ✅ SMART ENTRY ZONES (Execution Discipline)
-        if pd.notna(sma20.iloc[-1]) and sma20.iloc[-1] > 0:
-            buffer = 0.015  # 1.5% NGX volatility buffer
-            entry_low = round(sma20.iloc[-1] * (1 - buffer), 2)
-            entry_high = round(sma20.iloc[-1] * (1 + buffer), 2)
-            
-            prev_close = close.iloc[-2] if len(close) >= 2 else price
-            gap_pct = abs((price - prev_close) / prev_close) if pd.notna(prev_close) and prev_close != 0 else 0
-            chase_warning = "⚠️ Chase Risk" if (price > entry_high or gap_pct > 0.03) else "✅ Fair Zone"
-            pullback_watch = "🔍 Pullback Watch" if (signal == "BUY" and price < entry_low) else ""
-        else:
-            entry_low = entry_high = 0
-            chase_warning = "⚠️ No Data"
-            pullback_watch = ""
+if pd.notna(sma20.iloc[-1]) and sma20.iloc[-1] > 0:
+    buffer = 0.015  # 1.5% NGX volatility buffer
+    entry_low = round(sma20.iloc[-1] * (1 - buffer), 2)
+    entry_high = round(sma20.iloc[-1] * (1 + buffer), 2)
+    
+    prev_close = close.iloc[-2] if len(close) >= 2 else price
+    gap_pct = abs((price - prev_close) / prev_close) if pd.notna(prev_close) and prev_close != 0 else 0
+    chase_warning = "⚠️ Chase Risk" if (price > entry_high or gap_pct > 0.03) else "✅ Fair Zone"
+    
+    # ✅ FIXED: Triggers on BUY signals that are NOT chasing (patient entry opportunity)
+    pullback_watch = "🔍 Pullback/Zone" if (signal == "BUY" and chase_warning == "✅ Fair Zone") else ""
+else:
+    entry_low = entry_high = 0
+    chase_warning = "⚠️ No Data"
+    pullback_watch = ""
         
         signals.append({
             "Ticker": ticker,
