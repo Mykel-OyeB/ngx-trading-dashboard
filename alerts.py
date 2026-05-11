@@ -1,5 +1,5 @@
 # alerts.py - TELEGRAM + GOOGLE SHEETS LOGGING
-# ✅ Updated: Logs Liquidity_Flag & Event_Tag to SignalHistory
+# ✅ Updated: Logs Entry Zones, Chase Warning & Pullback Watch
 
 import requests
 import os
@@ -41,19 +41,21 @@ def log_signals_to_sheet(signals_df, date_str):
         sheet = client.open("NGX Trading Journal")
         signal_tab = sheet.worksheet("SignalHistory")
         
+        # ✅ UPDATED ROW ORDER: Matches data_engine.py expected_cols
         rows_to_add = []
         for _, row in signals_df.iterrows():
             rows_to_add.append([
                 date_str, row['Ticker'], row['Signal'], row['Strength(%)'],
                 row['Price(₦)'], row['Stop_Loss'], row['Take_Profit'], row['Reasons'],
                 row['SMA20'], row['SMA50'], row['RSI'], row['MACD_Hist'],
-                row['Liquidity_Flag'],  # ✅ NEW
-                row['Event_Tag']        # ✅ NEW
+                row['Liquidity_Flag'], row['Event_Tag'],
+                row['Entry_Zone_Low'], row['Entry_Zone_High'],  # ✅ NEW
+                row['Chase_Warning'], row['Pullback_Watch']     # ✅ NEW
             ])
         
         if rows_to_add:
             signal_tab.append_rows(rows_to_add, value_input_option='USER_ENTERED')
-            print(f"✅ Logged {len(rows_to_add)} signals + indicators to Google Sheets")
+            print(f"✅ Logged {len(rows_to_add)} signals + execution zones to Google Sheets")
             return True
         return False
     except Exception as e:
