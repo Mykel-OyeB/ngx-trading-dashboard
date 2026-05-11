@@ -1,5 +1,5 @@
 # data_engine.py - NGX DATA ENGINE (Google Sheets)
-# ✅ NEW: Liquidity_Flag & Event_Tag columns for execution safety
+# ✅ NEW: Smart Entry Zones, Chase Warning & Pullback Watch for execution discipline
 
 import pandas as pd
 import numpy as np
@@ -46,7 +46,7 @@ def generate_ngx_signals():
         ticker_history = prices_df[prices_df['Ticker'].str.strip() == ticker].sort_values('Date').tail(60)
         
         if len(ticker_history) < 20:
-            fetch_log.append(f"{ticker}: ️")
+            fetch_log.append(f"{ticker}: ⚠️")
             continue
         fetch_log.append(f"{ticker}: ✅")
         
@@ -67,26 +67,19 @@ def generate_ngx_signals():
         
         # ✅ LIQUIDITY FLAG
         if pd.notna(current_vol) and pd.notna(avg_vol_20d) and avg_vol_20d > 0:
-            if current_vol < avg_vol_20d * 0.5:
-                liq_flag = "⚠️ Low"
-            elif current_vol > avg_vol_20d * 3.0:
-                liq_flag = "⚠️ Spike"
-            else:
-                liq_flag = "✅ Normal"
-        else:
-            liq_flag = " No Data"
+            if current_vol < avg_vol_20d * 0.5: liq_flag = "⚠️ Low"
+            elif current_vol > avg_vol_20d * 3.0: liq_flag = "⚠️ Spike"
+            else: liq_flag = "✅ Normal"
+        else: liq_flag = "⚠️ No Data"
         
-        # ✅ EVENT TAG (Earnings/News vs Technical)
+        # ✅ EVENT TAG
         price_vs_sma20 = abs((price - sma20.iloc[-1]) / sma20.iloc[-1]) if pd.notna(sma20.iloc[-1]) and sma20.iloc[-1] != 0 else 0
         if pd.notna(current_vol) and pd.notna(avg_vol_20d) and avg_vol_20d > 0:
-            if current_vol > avg_vol_20d * 2.5 and price_vs_sma20 > 0.04:
-                event_tag = "📅 Earnings/News"
-            else:
-                event_tag = "📊 Technical"
-        else:
-            event_tag = "📊 Technical"
+            if current_vol > avg_vol_20d * 2.5 and price_vs_sma20 > 0.04: event_tag = "📅 Earnings/News"
+            else: event_tag = " Technical"
+        else: event_tag = " Technical"
         
-        # Scoring
+        # ✅ SCORING ENGINE
         score = 0
         reasons = []
         try:
@@ -105,6 +98,21 @@ def generate_ngx_signals():
         elif score >= 55: signal = "WATCH"
         else: signal = "AVOID"
         
+        # ✅ SMART ENTRY ZONES (Execution Discipline)
+        if pd.notna(sma20.iloc[-1]) and sma20.iloc[-1] > 0:
+            buffer = 0.015  # 1.5% NGX volatility buffer
+            entry_low = round(sma20.iloc[-1] * (1 - buffer), 2)
+            entry_high = round(sma20.iloc[-1] * (1 + buffer), 2)
+            
+            prev_close = close.iloc[-2] if len(close) >= 2 else price
+            gap_pct = abs((price - prev_close) / prev_close) if pd.notna(prev_close) and prev_close != 0 else 0
+            chase_warning = "⚠️ Chase Risk" if (price > entry_high or gap_pct > 0.03) else "✅ Fair Zone"
+            pullback_watch = "🔍 Pullback Watch" if (signal == "BUY" and price < entry_low) else ""
+        else:
+            entry_low = entry_high = 0
+            chase_warning = "⚠️ No Data"
+            pullback_watch = ""
+        
         signals.append({
             "Ticker": ticker,
             "Company": ticker.replace("MTNN", "MTN Nigeria").replace("GTCO", "GTCo"),
@@ -120,15 +128,20 @@ def generate_ngx_signals():
             "SMA50": round(float(sma50.iloc[-1]), 2) if pd.notna(sma50.iloc[-1]) else 0,
             "RSI": round(float(rsi.iloc[-1]), 1) if pd.notna(rsi.iloc[-1]) else 0,
             "MACD_Hist": round(float(macd_hist.iloc[-1]), 4) if pd.notna(macd_hist.iloc[-1]) else 0,
-            "Liquidity_Flag": liq_flag,  # ✅ NEW
-            "Event_Tag": event_tag       # ✅ NEW
+            "Liquidity_Flag": liq_flag,
+            "Event_Tag": event_tag,
+            "Entry_Zone_Low": entry_low,      # ✅ NEW
+            "Entry_Zone_High": entry_high,    # ✅ NEW
+            "Chase_Warning": chase_warning,   # ✅ NEW
+            "Pullback_Watch": pullback_watch  # ✅ NEW
         })
         
     df_signals = pd.DataFrame(signals)
     expected_cols = [
         "Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", 
         "Stop_Loss", "Take_Profit", "Potential_Return_%", "Date", "Reasons",
-        "SMA20", "SMA50", "RSI", "MACD_Hist", "Liquidity_Flag", "Event_Tag"
+        "SMA20", "SMA50", "RSI", "MACD_Hist", "Liquidity_Flag", "Event_Tag",
+        "Entry_Zone_Low", "Entry_Zone_High", "Chase_Warning", "Pullback_Watch"
     ]
     status_msg = f"✅ {len(signals)}/{len(latest_prices)} analyzed. " + " | ".join(fetch_log[:10])
     if df_signals.empty: return pd.DataFrame(columns=expected_cols), status_msg
