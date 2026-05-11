@@ -1,5 +1,5 @@
 # data_engine.py - NGX DATA ENGINE (Google Sheets)
-# ✅ NEW: Smart Entry Zones, Chase Warning & Pullback Watch for execution discipline
+# ✅ EXECUTION ZONES: Smart Entry Zones, Chase Warning & Pullback Watch
 
 import pandas as pd
 import numpy as np
@@ -68,7 +68,7 @@ def generate_ngx_signals():
         # ✅ LIQUIDITY FLAG
         if pd.notna(current_vol) and pd.notna(avg_vol_20d) and avg_vol_20d > 0:
             if current_vol < avg_vol_20d * 0.5: liq_flag = "⚠️ Low"
-            elif current_vol > avg_vol_20d * 3.0: liq_flag = "⚠️ Spike"
+            elif current_vol > avg_vol_20d * 3.0: liq_flag = "️ Spike"
             else: liq_flag = "✅ Normal"
         else: liq_flag = "⚠️ No Data"
         
@@ -76,8 +76,8 @@ def generate_ngx_signals():
         price_vs_sma20 = abs((price - sma20.iloc[-1]) / sma20.iloc[-1]) if pd.notna(sma20.iloc[-1]) and sma20.iloc[-1] != 0 else 0
         if pd.notna(current_vol) and pd.notna(avg_vol_20d) and avg_vol_20d > 0:
             if current_vol > avg_vol_20d * 2.5 and price_vs_sma20 > 0.04: event_tag = "📅 Earnings/News"
-            else: event_tag = " Technical"
-        else: event_tag = " Technical"
+            else: event_tag = "📊 Technical"
+        else: event_tag = "📊 Technical"
         
         # ✅ SCORING ENGINE
         score = 0
@@ -99,21 +99,21 @@ def generate_ngx_signals():
         else: signal = "AVOID"
         
         # ✅ SMART ENTRY ZONES (Execution Discipline)
-if pd.notna(sma20.iloc[-1]) and sma20.iloc[-1] > 0:
-    buffer = 0.015  # 1.5% NGX volatility buffer
-    entry_low = round(sma20.iloc[-1] * (1 - buffer), 2)
-    entry_high = round(sma20.iloc[-1] * (1 + buffer), 2)
-    
-    prev_close = close.iloc[-2] if len(close) >= 2 else price
-    gap_pct = abs((price - prev_close) / prev_close) if pd.notna(prev_close) and prev_close != 0 else 0
-    chase_warning = "⚠️ Chase Risk" if (price > entry_high or gap_pct > 0.03) else "✅ Fair Zone"
-    
-    # ✅ FIXED: Triggers on BUY signals that are NOT chasing (patient entry opportunity)
-    pullback_watch = "🔍 Pullback/Zone" if (signal == "BUY" and chase_warning == "✅ Fair Zone") else ""
-else:
-    entry_low = entry_high = 0
-    chase_warning = "⚠️ No Data"
-    pullback_watch = ""
+        if pd.notna(sma20.iloc[-1]) and sma20.iloc[-1] > 0:
+            buffer = 0.015  # 1.5% NGX volatility buffer
+            entry_low = round(sma20.iloc[-1] * (1 - buffer), 2)
+            entry_high = round(sma20.iloc[-1] * (1 + buffer), 2)
+            
+            prev_close = close.iloc[-2] if len(close) >= 2 else price
+            gap_pct = abs((price - prev_close) / prev_close) if pd.notna(prev_close) and prev_close != 0 else 0
+            chase_warning = "⚠️ Chase Risk" if (price > entry_high or gap_pct > 0.03) else "✅ Fair Zone"
+            
+            # ✅ FIXED PULLBACK LOGIC: Triggers on BUY signals in Fair Zone (patient entry)
+            pullback_watch = "🔍 Pullback/Zone" if (signal == "BUY" and chase_warning == "✅ Fair Zone") else ""
+        else:
+            entry_low = entry_high = 0
+            chase_warning = "⚠️ No Data"
+            pullback_watch = ""
         
         signals.append({
             "Ticker": ticker,
@@ -132,10 +132,10 @@ else:
             "MACD_Hist": round(float(macd_hist.iloc[-1]), 4) if pd.notna(macd_hist.iloc[-1]) else 0,
             "Liquidity_Flag": liq_flag,
             "Event_Tag": event_tag,
-            "Entry_Zone_Low": entry_low,      # ✅ NEW
-            "Entry_Zone_High": entry_high,    # ✅ NEW
-            "Chase_Warning": chase_warning,   # ✅ NEW
-            "Pullback_Watch": pullback_watch  # ✅ NEW
+            "Entry_Zone_Low": entry_low,
+            "Entry_Zone_High": entry_high,
+            "Chase_Warning": chase_warning,
+            "Pullback_Watch": pullback_watch
         })
         
     df_signals = pd.DataFrame(signals)
