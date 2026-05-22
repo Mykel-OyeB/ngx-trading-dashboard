@@ -22,7 +22,9 @@ def send_telegram_alert(message):
         return False
 
 def log_signals_to_sheet(signals_df, date_str):
+    """Append signals to Google Sheets with automatic deduplication"""
     try:
+        # Auth setup (same as before)
         creds_dict = {
             "type": "service_account",
             "project_id": os.getenv("GCP_PROJECT_ID"),
@@ -41,7 +43,20 @@ def log_signals_to_sheet(signals_df, date_str):
         sheet = client.open("NGX Trading Journal")
         signal_tab = sheet.worksheet("SignalHistory")
         
-        # ✅ UPDATED ROW ORDER: Matches data_engine.py expected_cols
+        # ✅ DEDUPLICATION: Find & remove today's existing rows
+        all_values = signal_tab.get_all_values()
+        rows_to_delete = []
+        for i, row in enumerate(all_values):
+            if row and row[0] == date_str:  # Column A = Date
+                rows_to_delete.append(i + 1)  # 1-based index for gspread
+        
+        if rows_to_delete:
+            # Delete from bottom to top to avoid index shifting
+            for row_num in sorted(rows_to_delete, reverse=True):
+                signal_tab.delete_rows(row_num)
+            print(f"🗑️ Cleared {len(rows_to_delete)} duplicate rows for {date_str}")
+        
+        # ✅ APPEND FRESH DATA
         rows_to_add = []
         for _, row in signals_df.iterrows():
             rows_to_add.append([
@@ -49,13 +64,13 @@ def log_signals_to_sheet(signals_df, date_str):
                 row['Price(₦)'], row['Stop_Loss'], row['Take_Profit'], row['Reasons'],
                 row['SMA20'], row['SMA50'], row['RSI'], row['MACD_Hist'],
                 row['Liquidity_Flag'], row['Event_Tag'],
-                row['Entry_Zone_Low'], row['Entry_Zone_High'],  # ✅ NEW
-                row['Chase_Warning'], row['Pullback_Watch']     # ✅ NEW
+                row['Entry_Zone_Low'], row['Entry_Zone_High'],
+                row['Chase_Warning'], row['Pullback_Watch']
             ])
         
         if rows_to_add:
             signal_tab.append_rows(rows_to_add, value_input_option='USER_ENTERED')
-            print(f"✅ Logged {len(rows_to_add)} signals + execution zones to Google Sheets")
+            print(f"✅ Logged {len(rows_to_add)} signals to Google Sheets")
             return True
         return False
     except Exception as e:
