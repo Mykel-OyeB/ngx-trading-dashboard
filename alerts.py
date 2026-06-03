@@ -1,9 +1,9 @@
 # alerts.py - TELEGRAM + GOOGLE SHEETS LOGGING
-# ✅ Updated: Logs Entry Zones, Chase Warning & Pullback Watch
+# ✅ Updated: Fetches previous signals for stability tracking + deduplication
 
 import requests
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 import gspread
 from google.oauth2.service_account import Credentials
@@ -21,10 +21,50 @@ def send_telegram_alert(message):
         print(f"Telegram error: {e}")
         return False
 
-def log_signals_to_sheet(signals_df, date_str):
-    """Append signals to Google Sheets with automatic deduplication"""
+def get_previous_signals():
+    """Fetches yesterday's signals from SignalHistory tab for stability comparison"""
     try:
-        # Auth setup (same as before)
+        creds_dict = {
+            "type": "service_account",
+            "project_id": os.getenv("GCP_PROJECT_ID"),
+            "private_key_id": os.getenv("GCP_PRIVATE_KEY_ID"),
+            "private_key": os.getenv("GCP_PRIVATE_KEY").replace('\\n', '\n'),
+            "client_email": os.getenv("GCP_CLIENT_EMAIL"),
+            "client_id": os.getenv("GCP_CLIENT_ID"),
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": os.getenv("GCP_CLIENT_CERT_URL")
+        }
+        scope = ['https://www.googleapis.com/auth/spreadsheets']
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        client = gspread.authorize(creds)
+        sheet = client.open("NGX Trading Journal")
+        signal_tab = sheet.worksheet("SignalHistory")
+        
+        # Get all data, skip header
+        data = signal_tab.get_all_values()
+        if len(data) < 2: return {}
+        
+        # Find yesterday's date
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        prev_signals = {}
+        
+        for row in data[1:]:
+            if row and row[0] == yesterday and len(row) > 3:
+                ticker = row[1].strip()
+                signal = row[2].strip()
+                prev_signals[ticker] = signal
+                
+        print(f"📂 Loaded {len(prev_signals)} previous signals for {yesterday}")
+        return prev_signals
+    except Exception as e:
+        print(f"⚠️ Could not fetch previous signals: {e}")
+        return {}
+
+def log_signals_to_sheet(signals_df, date_str):
+    """Append signals with automatic deduplication"""
+    try:
         creds_dict = {
             "type": "service_account",
             "project_id": os.getenv("GCP_PROJECT_ID"),
@@ -43,15 +83,14 @@ def log_signals_to_sheet(signals_df, date_str):
         sheet = client.open("NGX Trading Journal")
         signal_tab = sheet.worksheet("SignalHistory")
         
-        # ✅ DEDUPLICATION: Find & remove today's existing rows
+        # ✅ DEDUPLICATION: Remove today's existing rows
         all_values = signal_tab.get_all_values()
         rows_to_delete = []
         for i, row in enumerate(all_values):
-            if row and row[0] == date_str:  # Column A = Date
-                rows_to_delete.append(i + 1)  # 1-based index for gspread
+            if row and row[0] == date_str:
+                rows_to_delete.append(i + 1)
         
         if rows_to_delete:
-            # Delete from bottom to top to avoid index shifting
             for row_num in sorted(rows_to_delete, reverse=True):
                 signal_tab.delete_rows(row_num)
             print(f"🗑️ Cleared {len(rows_to_delete)} duplicate rows for {date_str}")
@@ -65,7 +104,8 @@ def log_signals_to_sheet(signals_df, date_str):
                 row['SMA20'], row['SMA50'], row['RSI'], row['MACD_Hist'],
                 row['Liquidity_Flag'], row['Event_Tag'],
                 row['Entry_Zone_Low'], row['Entry_Zone_High'],
-                row['Chase_Warning'], row['Pullback_Watch']
+                row['Chase_Warning'], row['Pullback_Watch'],
+                row['Signal_Stability']  # ✅ NEW
             ])
         
         if rows_to_add:
@@ -82,12 +122,14 @@ def run_alerts():
     start_time = datetime.now(lagos_tz)
     print(f"🚀 Started: {start_time.strftime('%Y-%m-%d %H:%M:%S')} WAT")
     try:
-        signals_df, status_msg = generate_ngx_signals()
+        # ✅ Fetch previous signals for stability tracking
+        prev_signals = get_previous_signals()
+        signals_df, status_msg = generate_ngx_signals(prev_signals)
         print(f"📈 Generated {len(signals_df)} signals")
         
         fx_risk = get_fx_risk_alert()
         today = datetime.now().strftime("%B %d, %Y")
-        title = f"🇳 *NGX SIGNALS - {today}*"
+        title = f"🇳🇬 *NGX SIGNALS - {today}*"
         buy_signals = signals_df[signals_df["Signal"] == "BUY"] if not signals_df.empty else None
         
         if buy_signals is None or buy_signals.empty:
@@ -95,7 +137,8 @@ def run_alerts():
         else:
             message = f"{title}\n\n🎯 *Top {min(5, len(buy_signals))} BUY Signals:*\n\n"
             for _, row in buy_signals.head(5).iterrows():
-                message += f"🟢 *{row['Ticker']}*\n   💰 Price: ₦{row['Price(₦)']:,.2f}\n    Strength: {row['Strength(%)']}%\n   🎯 TP: ₦{row['Take_Profit']:,.2f} (+30%)\n   🛑 SL: ₦{row['Stop_Loss']:,.2f} (-7%)\n\n"
+                stability_emoji = "✅" if "Continuation" in row.get("Signal_Stability", "") else ""
+                message += f"{stability_emoji} *{row['Ticker']}*\n   💰 Price: ₦{row['Price(₦)']:,.2f}\n    Strength: {row['Strength(%)']}%\n   🔄 Status: {row.get('Signal_Stability', 'N/A')}\n   🎯 TP: ₦{row['Take_Profit']:,.2f} (+30%)\n   🛑 SL: ₦{row['Stop_Loss']:,.2f} (-7%)\n\n"
             if len(buy_signals) > 5: message += f" and {len(buy_signals) - 5} more signals\n\n"
         
         if fx_risk["alert"]: message += f"\n⚠️ *FX ALERT:* {fx_risk['message']}\n"
