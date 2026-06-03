@@ -1,5 +1,5 @@
 # data_engine.py - NGX DATA ENGINE (Google Sheets)
-# ✅ EXECUTION ZONES: Smart Entry Zones, Chase Warning & Pullback Watch
+# ✅ NEW: Signal_Stability column to filter whipsaws & track momentum
 
 import pandas as pd
 import numpy as np
@@ -28,7 +28,7 @@ def fetch_prices_from_sheet():
         print(f"Sheet fetch error: {e}")
         return pd.DataFrame()
 
-def generate_ngx_signals():
+def generate_ngx_signals(previous_signals=None):
     prices_df = fetch_prices_from_sheet()
     if prices_df.empty:
         return pd.DataFrame(), "❌ Sheet returned no valid data."
@@ -40,6 +40,9 @@ def generate_ngx_signals():
     
     signals = []
     fetch_log = []
+    
+    # ✅ STABILITY MAPPING
+    strength_map = {"AVOID": 0, "WATCH": 1, "BUY": 2}
     
     for _, row in latest_prices.iterrows():
         ticker = str(row['Ticker']).strip()
@@ -68,14 +71,14 @@ def generate_ngx_signals():
         # ✅ LIQUIDITY FLAG
         if pd.notna(current_vol) and pd.notna(avg_vol_20d) and avg_vol_20d > 0:
             if current_vol < avg_vol_20d * 0.5: liq_flag = "⚠️ Low"
-            elif current_vol > avg_vol_20d * 3.0: liq_flag = "️ Spike"
+            elif current_vol > avg_vol_20d * 3.0: liq_flag = "⚠️ Spike"
             else: liq_flag = "✅ Normal"
         else: liq_flag = "⚠️ No Data"
         
         # ✅ EVENT TAG
         price_vs_sma20 = abs((price - sma20.iloc[-1]) / sma20.iloc[-1]) if pd.notna(sma20.iloc[-1]) and sma20.iloc[-1] != 0 else 0
         if pd.notna(current_vol) and pd.notna(avg_vol_20d) and avg_vol_20d > 0:
-            if current_vol > avg_vol_20d * 2.5 and price_vs_sma20 > 0.04: event_tag = "📅 Earnings/News"
+            if current_vol > avg_vol_20d * 2.5 and price_vs_sma20 > 0.04: event_tag = " Earnings/News"
             else: event_tag = "📊 Technical"
         else: event_tag = "📊 Technical"
         
@@ -98,22 +101,33 @@ def generate_ngx_signals():
         elif score >= 55: signal = "WATCH"
         else: signal = "AVOID"
         
-        # ✅ SMART ENTRY ZONES (Execution Discipline)
+        # ✅ SMART ENTRY ZONES
         if pd.notna(sma20.iloc[-1]) and sma20.iloc[-1] > 0:
-            buffer = 0.015  # 1.5% NGX volatility buffer
+            buffer = 0.015
             entry_low = round(sma20.iloc[-1] * (1 - buffer), 2)
             entry_high = round(sma20.iloc[-1] * (1 + buffer), 2)
-            
             prev_close = close.iloc[-2] if len(close) >= 2 else price
             gap_pct = abs((price - prev_close) / prev_close) if pd.notna(prev_close) and prev_close != 0 else 0
-            chase_warning = "⚠️ Chase Risk" if (price > entry_high or gap_pct > 0.03) else "✅ Fair Zone"
-            
-            # ✅ FIXED PULLBACK LOGIC: Triggers on BUY signals in Fair Zone (patient entry)
-            pullback_watch = "🔍 Pullback/Zone" if (signal == "BUY" and chase_warning == "✅ Fair Zone") else ""
+            chase_warning = "️ Chase Risk" if (price > entry_high or gap_pct > 0.03) else "✅ Fair Zone"
+            pullback_watch = " Pullback/Zone" if (signal == "BUY" and chase_warning == "✅ Fair Zone") else ""
         else:
             entry_low = entry_high = 0
             chase_warning = "⚠️ No Data"
             pullback_watch = ""
+        
+        # ✅ SIGNAL STABILITY CALCULATION
+        prev = previous_signals.get(ticker, "") if previous_signals else ""
+        today_val = strength_map.get(signal, 0)
+        prev_val = strength_map.get(prev, -1)
+        
+        if prev_val == -1:
+            stability = " New Signal"
+        elif today_val == prev_val:
+            stability = "✅ Continuation"
+        elif today_val > prev_val:
+            stability = "📈 Strengthening"
+        else:
+            stability = "⚠️ Weakening"
         
         signals.append({
             "Ticker": ticker,
@@ -135,7 +149,8 @@ def generate_ngx_signals():
             "Entry_Zone_Low": entry_low,
             "Entry_Zone_High": entry_high,
             "Chase_Warning": chase_warning,
-            "Pullback_Watch": pullback_watch
+            "Pullback_Watch": pullback_watch,
+            "Signal_Stability": stability  # ✅ NEW
         })
         
     df_signals = pd.DataFrame(signals)
@@ -143,7 +158,8 @@ def generate_ngx_signals():
         "Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", 
         "Stop_Loss", "Take_Profit", "Potential_Return_%", "Date", "Reasons",
         "SMA20", "SMA50", "RSI", "MACD_Hist", "Liquidity_Flag", "Event_Tag",
-        "Entry_Zone_Low", "Entry_Zone_High", "Chase_Warning", "Pullback_Watch"
+        "Entry_Zone_Low", "Entry_Zone_High", "Chase_Warning", "Pullback_Watch",
+        "Signal_Stability"  # ✅ NEW
     ]
     status_msg = f"✅ {len(signals)}/{len(latest_prices)} analyzed. " + " | ".join(fetch_log[:10])
     if df_signals.empty: return pd.DataFrame(columns=expected_cols), status_msg
