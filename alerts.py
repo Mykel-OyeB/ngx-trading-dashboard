@@ -1,5 +1,5 @@
 # alerts.py - TELEGRAM + GOOGLE SHEETS LOGGING
-# ✅ Fixed: Robust previous signal fetching + debug logging for stability tracking
+# ✅ Fixed: Added Drive scope to get_previous_signals() for spreadsheet lookup
 
 import requests
 import os
@@ -36,7 +36,8 @@ def get_previous_signals():
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
             "client_x509_cert_url": os.getenv("GCP_CLIENT_CERT_URL")
         }
-        scope = ['https://www.googleapis.com/auth/spreadsheets']
+        # ✅ FIXED: Added Drive scope for spreadsheet lookup by name
+        scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
         creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
         client = gspread.authorize(creds)
         sheet = client.open("NGX Trading Journal")
@@ -45,7 +46,7 @@ def get_previous_signals():
         # Get all data, skip header
         data = signal_tab.get_all_values()
         if len(data) < 2: 
-            print("️ SignalHistory has <2 rows. Cannot fetch previous signals.")
+            print("⚠️ SignalHistory has <2 rows. Cannot fetch previous signals.")
             return {}
         
         # Calculate yesterday's date in YYYY-MM-DD
@@ -141,7 +142,7 @@ def run_alerts():
         # ✅ Fetch previous signals for stability tracking
         prev_signals = get_previous_signals()
         signals_df, status_msg = generate_ngx_signals(prev_signals)
-        print(f" Generated {len(signals_df)} signals")
+        print(f"📈 Generated {len(signals_df)} signals")
         
         fx_risk = get_fx_risk_alert()
         today = datetime.now().strftime("%B %d, %Y")
@@ -149,7 +150,7 @@ def run_alerts():
         buy_signals = signals_df[signals_df["Signal"] == "BUY"] if not signals_df.empty else None
         
         if buy_signals is None or buy_signals.empty:
-            message = f"{title}\n\n️ *No BUY signals meet threshold today.*\n\n Market conditions are neutral/bearish.\n Stay patient for high-conviction setups (≥75% strength).\n\nℹ️ {status_msg}"
+            message = f"{title}\n\n⏸️ *No BUY signals meet threshold today.*\n\n Market conditions are neutral/bearish.\n Stay patient for high-conviction setups (≥75% strength).\n\nℹ️ {status_msg}"
         else:
             message = f"{title}\n\n🎯 *Top {min(5, len(buy_signals))} BUY Signals:*\n\n"
             for _, row in buy_signals.head(5).iterrows():
