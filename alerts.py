@@ -1,5 +1,5 @@
 # alerts.py - TELEGRAM + GOOGLE SHEETS LOGGING
-# ✅ Updated: Fetches previous signals for stability tracking + deduplication
+# ✅ Fixed: Robust previous signal fetching + debug logging for stability tracking
 
 import requests
 import os
@@ -22,7 +22,7 @@ def send_telegram_alert(message):
         return False
 
 def get_previous_signals():
-    """Fetches yesterday's signals from SignalHistory tab for stability comparison"""
+    """Fetches yesterday's signals from SignalHistory tab with robust matching"""
     try:
         creds_dict = {
             "type": "service_account",
@@ -44,22 +44,38 @@ def get_previous_signals():
         
         # Get all data, skip header
         data = signal_tab.get_all_values()
-        if len(data) < 2: return {}
+        if len(data) < 2: 
+            print("️ SignalHistory has <2 rows. Cannot fetch previous signals.")
+            return {}
         
-        # Find yesterday's date
+        # Calculate yesterday's date in YYYY-MM-DD
         yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        print(f"🔍 Looking for signals dated: {yesterday}")
+        
         prev_signals = {}
+        match_count = 0
         
         for row in data[1:]:
-            if row and row[0] == yesterday and len(row) > 3:
-                ticker = row[1].strip()
-                signal = row[2].strip()
-                prev_signals[ticker] = signal
-                
-        print(f"📂 Loaded {len(prev_signals)} previous signals for {yesterday}")
+            if not row or len(row) < 3: continue
+            
+            # Robust date matching: strip spaces, check exact match or contains
+            cell_date = str(row[0]).strip()
+            if cell_date == yesterday or yesterday in cell_date:
+                ticker = str(row[1]).strip()
+                signal = str(row[2]).strip()
+                if ticker and signal:
+                    prev_signals[ticker] = signal
+                    match_count += 1
+                    
+        print(f"✅ Found {match_count} signals for {yesterday}")
+        if match_count == 0:
+            print(f"   Tip: Check SignalHistory Column A. Dates should be YYYY-MM-DD (e.g., {yesterday})")
+            
         return prev_signals
     except Exception as e:
-        print(f"⚠️ Could not fetch previous signals: {e}")
+        print(f"⚠️ get_previous_signals failed: {e}")
+        import traceback
+        traceback.print_exc()
         return {}
 
 def log_signals_to_sheet(signals_df, date_str):
@@ -87,7 +103,7 @@ def log_signals_to_sheet(signals_df, date_str):
         all_values = signal_tab.get_all_values()
         rows_to_delete = []
         for i, row in enumerate(all_values):
-            if row and row[0] == date_str:
+            if row and str(row[0]).strip() == date_str:
                 rows_to_delete.append(i + 1)
         
         if rows_to_delete:
@@ -105,7 +121,7 @@ def log_signals_to_sheet(signals_df, date_str):
                 row['Liquidity_Flag'], row['Event_Tag'],
                 row['Entry_Zone_Low'], row['Entry_Zone_High'],
                 row['Chase_Warning'], row['Pullback_Watch'],
-                row['Signal_Stability']  # ✅ NEW
+                row['Signal_Stability']
             ])
         
         if rows_to_add:
@@ -125,7 +141,7 @@ def run_alerts():
         # ✅ Fetch previous signals for stability tracking
         prev_signals = get_previous_signals()
         signals_df, status_msg = generate_ngx_signals(prev_signals)
-        print(f"📈 Generated {len(signals_df)} signals")
+        print(f" Generated {len(signals_df)} signals")
         
         fx_risk = get_fx_risk_alert()
         today = datetime.now().strftime("%B %d, %Y")
@@ -133,7 +149,7 @@ def run_alerts():
         buy_signals = signals_df[signals_df["Signal"] == "BUY"] if not signals_df.empty else None
         
         if buy_signals is None or buy_signals.empty:
-            message = f"{title}\n\n⏸️ *No BUY signals meet threshold today.*\n\n Market conditions are neutral/bearish.\n Stay patient for high-conviction setups (≥75% strength).\n\nℹ️ {status_msg}"
+            message = f"{title}\n\n️ *No BUY signals meet threshold today.*\n\n Market conditions are neutral/bearish.\n Stay patient for high-conviction setups (≥75% strength).\n\nℹ️ {status_msg}"
         else:
             message = f"{title}\n\n🎯 *Top {min(5, len(buy_signals))} BUY Signals:*\n\n"
             for _, row in buy_signals.head(5).iterrows():
