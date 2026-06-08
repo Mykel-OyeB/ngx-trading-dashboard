@@ -1,5 +1,5 @@
 # alerts.py - TELEGRAM + GOOGLE SHEETS LOGGING
-# ✅ FIXED: Finds latest trading day automatically (handles weekends/holidays)
+# ✅ FIXED: Explicitly excludes today's date when fetching previous signals
 
 import requests
 import os
@@ -22,7 +22,7 @@ def send_telegram_alert(message):
         return False
 
 def get_previous_signals():
-    """Fetches signals from the LATEST trading day in SignalHistory (handles weekends)"""
+    """Fetches signals from the LATEST TRADING DAY (excludes today)"""
     try:
         creds_dict = {
             "type": "service_account",
@@ -47,29 +47,31 @@ def get_previous_signals():
             print("⚠️ SignalHistory has <2 rows. Cannot fetch previous signals.")
             return {}
         
-        # ✅ AUTOMATIC DATE DETECTION: Find the latest date in Column A
+        today_str = datetime.now().strftime("%Y-%m-%d")
         dates_in_sheet = [str(row[0]).strip() for row in data[1:] if row and row[0]]
-        if not dates_in_sheet:
-            print("⚠️ No dates found in SignalHistory.")
+        
+        # ✅ EXCLUDE TODAY'S DATE to avoid self-comparison
+        prev_dates = [d for d in dates_in_sheet if d != today_str]
+        if not prev_dates:
+            print("⚠️ No previous trading days found in sheet.")
             return {}
             
-        # YYYY-MM-DD strings sort chronologically when using max()
-        latest_date = max(dates_in_sheet)
-        print(f" Comparing against latest trading day: {latest_date}")
+        latest_prev_date = max(prev_dates)
+        print(f"🔍 Comparing against previous trading day: {latest_prev_date}")
         
         prev_signals = {}
         match_count = 0
         
         for row in data[1:]:
             if not row or len(row) < 3: continue
-            if str(row[0]).strip() == latest_date:
+            if str(row[0]).strip() == latest_prev_date:
                 ticker = str(row[1]).strip()
                 signal = str(row[2]).strip()
                 if ticker and signal:
                     prev_signals[ticker] = signal
                     match_count += 1
                     
-        print(f"✅ Found {match_count} signals for {latest_date}")
+        print(f"✅ Found {match_count} signals for {latest_prev_date}")
         return prev_signals
     except Exception as e:
         print(f"⚠️ get_previous_signals failed: {e}")
@@ -137,7 +139,6 @@ def run_alerts():
     start_time = datetime.now(lagos_tz)
     print(f"🚀 Started: {start_time.strftime('%Y-%m-%d %H:%M:%S')} WAT")
     try:
-        # ✅ Fetch previous signals for stability tracking
         prev_signals = get_previous_signals()
         signals_df, status_msg = generate_ngx_signals(prev_signals)
         print(f"📈 Generated {len(signals_df)} signals")
