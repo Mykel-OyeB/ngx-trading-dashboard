@@ -1,5 +1,5 @@
 # alerts.py - TELEGRAM + GOOGLE SHEETS LOGGING
-# ✅ Fixed: Added Drive scope to get_previous_signals() for spreadsheet lookup
+# ✅ FIXED: Finds latest trading day automatically (handles weekends/holidays)
 
 import requests
 import os
@@ -22,7 +22,7 @@ def send_telegram_alert(message):
         return False
 
 def get_previous_signals():
-    """Fetches yesterday's signals from SignalHistory tab with robust matching"""
+    """Fetches signals from the LATEST trading day in SignalHistory (handles weekends)"""
     try:
         creds_dict = {
             "type": "service_account",
@@ -36,42 +36,40 @@ def get_previous_signals():
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
             "client_x509_cert_url": os.getenv("GCP_CLIENT_CERT_URL")
         }
-        # ✅ FIXED: Added Drive scope for spreadsheet lookup by name
         scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
         creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
         client = gspread.authorize(creds)
         sheet = client.open("NGX Trading Journal")
         signal_tab = sheet.worksheet("SignalHistory")
         
-        # Get all data, skip header
         data = signal_tab.get_all_values()
         if len(data) < 2: 
             print("⚠️ SignalHistory has <2 rows. Cannot fetch previous signals.")
             return {}
         
-        # Calculate yesterday's date in YYYY-MM-DD
-        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-        print(f"🔍 Looking for signals dated: {yesterday}")
+        # ✅ AUTOMATIC DATE DETECTION: Find the latest date in Column A
+        dates_in_sheet = [str(row[0]).strip() for row in data[1:] if row and row[0]]
+        if not dates_in_sheet:
+            print("⚠️ No dates found in SignalHistory.")
+            return {}
+            
+        # YYYY-MM-DD strings sort chronologically when using max()
+        latest_date = max(dates_in_sheet)
+        print(f" Comparing against latest trading day: {latest_date}")
         
         prev_signals = {}
         match_count = 0
         
         for row in data[1:]:
             if not row or len(row) < 3: continue
-            
-            # Robust date matching: strip spaces, check exact match or contains
-            cell_date = str(row[0]).strip()
-            if cell_date == yesterday or yesterday in cell_date:
+            if str(row[0]).strip() == latest_date:
                 ticker = str(row[1]).strip()
                 signal = str(row[2]).strip()
                 if ticker and signal:
                     prev_signals[ticker] = signal
                     match_count += 1
                     
-        print(f"✅ Found {match_count} signals for {yesterday}")
-        if match_count == 0:
-            print(f"   Tip: Check SignalHistory Column A. Dates should be YYYY-MM-DD (e.g., {yesterday})")
-            
+        print(f"✅ Found {match_count} signals for {latest_date}")
         return prev_signals
     except Exception as e:
         print(f"⚠️ get_previous_signals failed: {e}")
