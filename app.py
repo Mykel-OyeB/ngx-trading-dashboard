@@ -1,5 +1,5 @@
-# app.py - NGX Algorithmic Trading Dashboard
-# ✅ Fixed: Fetches previous signals from Sheets to calculate stability correctly
+# app.py - NGX Algorithmic Trading Dashboard (DIAGNOSTIC VERSION)
+# ✅ Includes explicit status checks for Secrets and Previous Signals
 
 import streamlit as st
 import pandas as pd
@@ -20,60 +20,89 @@ except Exception as e:
 
 st.set_page_config(page_title="NGX Trading Signals", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
 
-# ✅ FETCH PREVIOUS SIGNALS FOR STABILITY (Streamlit-synced)
-def get_streamlit_previous_signals():
-    """Fetches latest trading day signals from SignalHistory tab"""
-    try:
-        if "GCP_PRIVATE_KEY" not in st.secrets:
-            return {}  # Fallback if secrets not configured yet
-            
-        creds_dict = {
-            "type": st.secrets.get("type", "service_account"),
-            "project_id": st.secrets["GCP_PROJECT_ID"],
-            "private_key_id": st.secrets["GCP_PRIVATE_KEY_ID"],
-            "private_key": st.secrets["GCP_PRIVATE_KEY"].replace('\\n', '\n'),
-            "client_email": st.secrets["GCP_CLIENT_EMAIL"],
-            "client_id": st.secrets["GCP_CLIENT_ID"],
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": st.secrets.get("GCP_CLIENT_CERT_URL", "")
-        }
-        scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-        client = gspread.authorize(creds)
-        sheet = client.open("NGX Trading Journal")
-        signal_tab = sheet.worksheet("SignalHistory")
-        
-        data = signal_tab.get_all_values()
-        if len(data) < 2: return {}
-            
-        # Find latest date in sheet
-        dates = [str(row[0]).strip() for row in data[1:] if row and row[0]]
-        if not dates: return {}
-        latest_date = max(dates)
-        
-        prev_signals = {}
-        for row in data[1:]:
-            if row and str(row[0]).strip() == latest_date and len(row) >= 3:
-                ticker = str(row[1]).strip()
-                signal = str(row[2]).strip()
-                if ticker and signal:
-                    prev_signals[ticker] = signal
-        return prev_signals
-    except Exception as e:
-        print(f"⚠️ Streamlit previous signals fetch failed: {e}")
-        return {}
+# ==========================================
+# 🔍 DIAGNOSTIC SECTION: CHECKING CONNECTIONS
+# ==========================================
+st.subheader("🔍 System Diagnostic Check")
 
-# Generate Signals with Stability Context
-prev_signals = get_streamlit_previous_signals()
+prev_signals = {}
+diag_status = "Unknown"
+diag_details = ""
+
+try:
+    # 1. Check Secrets
+    if "GCP_PROJECT_ID" not in st.secrets:
+        diag_status = "❌ FAIL"
+        diag_details = "GCP_PROJECT_ID not found in Streamlit Secrets."
+        raise ValueError("Missing GCP_PROJECT_ID in secrets")
+    
+    # 2. Connect to Sheet
+    creds_dict = {
+        "type": "service_account",
+        "project_id": st.secrets["GCP_PROJECT_ID"],
+        "private_key_id": st.secrets.get("GCP_PRIVATE_KEY_ID", ""),
+        "private_key": st.secrets["GCP_PRIVATE_KEY"].replace('\\n', '\n'),
+        "client_email": st.secrets["GCP_CLIENT_EMAIL"],
+        "client_id": st.secrets.get("GCP_CLIENT_ID", ""),
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+        "client_x509_cert_url": st.secrets.get("GCP_CLIENT_CERT_URL", "")
+    }
+    scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+    client = gspread.authorize(creds)
+    
+    sheet = client.open("NGX Trading Journal")
+    signal_tab = sheet.worksheet("SignalHistory")
+    data = signal_tab.get_all_values()
+    
+    diag_status = "✅ Connected"
+    
+    # 3. Find Latest Date
+    if len(data) >= 2:
+        dates = [str(row[0]).strip() for row in data[1:] if row and row[0]]
+        if dates:
+            latest_date = max(dates)
+            diag_details = f"Latest date in sheet: {latest_date}"
+            
+            # 4. Fetch Signals for Latest Date
+            for row in data[1:]:
+                if row and str(row[0]).strip() == latest_date and len(row) >= 3:
+                    ticker = str(row[1]).strip()
+                    signal = str(row[2]).strip()
+                    if ticker and signal:
+                        prev_signals[ticker] = signal
+            
+            diag_details += f" | Loaded {len(prev_signals)} signals for {latest_date}"
+        else:
+            diag_details = "Sheet is empty or dates are missing."
+    else:
+        diag_details = "Sheet has insufficient rows (<2)."
+
+except Exception as e:
+    diag_status = "❌ ERROR"
+    diag_details = str(e)
+
+# Display Diagnostic Result
+if diag_status == "✅ Connected":
+    st.success(f"**Sheet Connection:** {diag_status} — {diag_details}")
+else:
+    st.error(f"**Sheet Connection:** {diag_status} — {diag_details}")
+    st.info("💡 Check your Streamlit Secrets formatting and key names.")
+
+# ==========================================
+#  MAIN APP LOGIC
+# ==========================================
+
+# Generate Signals using the fetched previous signals
 signals_df, fetch_status = generate_ngx_signals(prev_signals)
 sim_metrics = get_portfolio_metrics()
 fx_risk = get_fx_risk_alert()
 
+st.divider()
 st.title("🇳🇬 NGX Algorithmic Trading Dashboard")
 st.markdown(f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} WAT")
-st.divider()
 
 st.sidebar.header("📊 System Status")
 st.sidebar.metric("Model Status", "✅ Live")
@@ -81,10 +110,10 @@ st.sidebar.metric("Data Source", "Google Sheets (NSE 30)")
 if "❌" in fetch_status: st.sidebar.error(fetch_status)
 elif "⚠️" in fetch_status: st.sidebar.warning(fetch_status)
 else: st.sidebar.success(fetch_status)
+
 st.sidebar.divider()
-if fx_risk["alert"]: st.sidebar.error(f"️ FX RISK: {fx_risk['message']}")
+if fx_risk["alert"]: st.sidebar.error(f"⚠️ FX RISK: {fx_risk['message']}")
 else: st.sidebar.success(f"✅ FX: {fx_risk['message']}")
-st.sidebar.info("📱 Add to Home Screen:\nSafari/Chrome → Share → Add to Home Screen")
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎯 Today's Signals", "📈 Performance", "⚙️ Risk & Settings", "📊 Analytics", " Market News"])
 
@@ -102,9 +131,9 @@ with tab1:
             "Stop_Loss", "Take_Profit", "Potential_Return_%"
         ]
         st.dataframe(buy_signals[display_cols], use_container_width=True, hide_index=True)
-        st.caption(" **EXECUTION RULE:** Only enter on `✅ Continuation` or `📈 Strengthening`. If `⚠️ Weakening`, tighten SL or wait. Never chase above `Entry_Zone_High`.")
+        st.caption("💡 **EXECUTION RULE:** Only enter on `✅ Continuation` or `📈 Strengthening`. If `⚠️ Weakening`, tighten SL or wait.")
     else:
-        st.info("️ No strong BUY signals today.")
+        st.info("⏸️ No strong BUY signals today.")
         
     st.divider()
     st.subheader("📊 Market Overview")
@@ -127,7 +156,7 @@ with tab2:
     c1.metric("Total Return", "47.3%"); c2.metric("Sharpe", "0.98"); c3.metric("Max DD", "-18.4%"); c4.metric("Win Rate", "54.2%")
 
 with tab3:
-    st.subheader("️ Risk Rules")
+    st.subheader("⚠️ Risk Rules")
     c1,c2,c3 = st.columns(3)
     c1.metric("Max Position", "5%"); c2.metric("Stop Loss", "7%"); c3.metric("Take Profit", "30%")
     st.info("📖 See Operations Manual v3.0 for stability filtering & execution checklist.")
@@ -164,7 +193,7 @@ with tab5:
     
     st.divider()
     st.subheader("📅 Economic Calendar")
-    econ = pd.DataFrame({"Date":["2026-05-15","2026-05-20","2026-06-10"],"Event":["CBN MPC Meeting","NBS Inflation","NBS GDP"],"Impact":["🔴 High","🔴 High","🔴 High"],"Previous":["26.50%","15.38%","2.7%"],"Forecast":["Hold/↑ 27%","15.8%","3.1%"]})
+    econ = pd.DataFrame({"Date":["2026-05-15","2026-05-20","2026-06-10"],"Event":["CBN MPC Meeting","NBS Inflation","NBS GDP"],"Impact":[" High","🔴 High","🔴 High"],"Previous":["26.50%","15.38%","2.7%"],"Forecast":["Hold/↑ 27%","15.8%","3.1%"]})
     st.dataframe(econ, use_container_width=True, hide_index=True)
     c1,c2,c3,c4 = st.columns(4)
     c1.metric("MPR","26.50%"); c2.metric("Inflation","15.69%"); c3.metric("FX (NAFEM)","₦1,375/$"); c4.metric("Reserves","$49.58bn")
