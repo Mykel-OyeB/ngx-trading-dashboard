@@ -1,14 +1,17 @@
 # app.py - NGX Algorithmic Trading Dashboard
-# ✅ Updated: Signal_Stability column + execution zone display
+# ✅ Fixed: Fetches previous signals from Sheets to calculate stability correctly
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-from datetime import datetime
+from datetime import datetime, timedelta
 import feedparser
 import requests
+import gspread
+from google.oauth2.service_account import Credentials
 
+# Safe imports
 try:
     from data_engine import generate_ngx_signals, get_portfolio_metrics, get_fx_risk_alert
 except Exception as e:
@@ -16,11 +19,59 @@ except Exception as e:
     st.stop()
 
 st.set_page_config(page_title="NGX Trading Signals", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
-signals_df, fetch_status = generate_ngx_signals()
+
+# ✅ FETCH PREVIOUS SIGNALS FOR STABILITY (Streamlit-synced)
+def get_streamlit_previous_signals():
+    """Fetches latest trading day signals from SignalHistory tab"""
+    try:
+        if "GCP_PRIVATE_KEY" not in st.secrets:
+            return {}  # Fallback if secrets not configured yet
+            
+        creds_dict = {
+            "type": st.secrets.get("type", "service_account"),
+            "project_id": st.secrets["GCP_PROJECT_ID"],
+            "private_key_id": st.secrets["GCP_PRIVATE_KEY_ID"],
+            "private_key": st.secrets["GCP_PRIVATE_KEY"].replace('\\n', '\n'),
+            "client_email": st.secrets["GCP_CLIENT_EMAIL"],
+            "client_id": st.secrets["GCP_CLIENT_ID"],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": st.secrets.get("GCP_CLIENT_CERT_URL", "")
+        }
+        scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        client = gspread.authorize(creds)
+        sheet = client.open("NGX Trading Journal")
+        signal_tab = sheet.worksheet("SignalHistory")
+        
+        data = signal_tab.get_all_values()
+        if len(data) < 2: return {}
+            
+        # Find latest date in sheet
+        dates = [str(row[0]).strip() for row in data[1:] if row and row[0]]
+        if not dates: return {}
+        latest_date = max(dates)
+        
+        prev_signals = {}
+        for row in data[1:]:
+            if row and str(row[0]).strip() == latest_date and len(row) >= 3:
+                ticker = str(row[1]).strip()
+                signal = str(row[2]).strip()
+                if ticker and signal:
+                    prev_signals[ticker] = signal
+        return prev_signals
+    except Exception as e:
+        print(f"⚠️ Streamlit previous signals fetch failed: {e}")
+        return {}
+
+# Generate Signals with Stability Context
+prev_signals = get_streamlit_previous_signals()
+signals_df, fetch_status = generate_ngx_signals(prev_signals)
 sim_metrics = get_portfolio_metrics()
 fx_risk = get_fx_risk_alert()
 
-st.title("🇬 NGX Algorithmic Trading Dashboard")
+st.title("🇳🇬 NGX Algorithmic Trading Dashboard")
 st.markdown(f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} WAT")
 st.divider()
 
@@ -28,21 +79,20 @@ st.sidebar.header("📊 System Status")
 st.sidebar.metric("Model Status", "✅ Live")
 st.sidebar.metric("Data Source", "Google Sheets (NSE 30)")
 if "❌" in fetch_status: st.sidebar.error(fetch_status)
-elif "️" in fetch_status: st.sidebar.warning(fetch_status)
+elif "⚠️" in fetch_status: st.sidebar.warning(fetch_status)
 else: st.sidebar.success(fetch_status)
 st.sidebar.divider()
-if fx_risk["alert"]: st.sidebar.error(f"⚠️ FX RISK: {fx_risk['message']}")
+if fx_risk["alert"]: st.sidebar.error(f"️ FX RISK: {fx_risk['message']}")
 else: st.sidebar.success(f"✅ FX: {fx_risk['message']}")
-st.sidebar.info(" Add to Home Screen:\nSafari/Chrome → Share → Add to Home Screen")
+st.sidebar.info("📱 Add to Home Screen:\nSafari/Chrome → Share → Add to Home Screen")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎯 Today's Signals", " Performance", "⚙️ Risk & Settings", "📊 Analytics", "📰 Market News"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎯 Today's Signals", "📈 Performance", "⚙️ Risk & Settings", "📊 Analytics", " Market News"])
 
 with tab1:
     st.subheader("🟢 Buy Signals - " + datetime.now().strftime("%B %d, %Y"))
     buy_signals = signals_df[signals_df["Signal"] == "BUY"].copy() if not signals_df.empty else pd.DataFrame()
     
     if not buy_signals.empty:
-        # ✅ UPDATED: Stability moved to front for quick filtering
         display_cols = [
             "Ticker", "Company", "Price(₦)", "Strength(%)",
             "Signal_Stability", "Chase_Warning", "Pullback_Watch",
@@ -54,7 +104,7 @@ with tab1:
         st.dataframe(buy_signals[display_cols], use_container_width=True, hide_index=True)
         st.caption(" **EXECUTION RULE:** Only enter on `✅ Continuation` or `📈 Strengthening`. If `⚠️ Weakening`, tighten SL or wait. Never chase above `Entry_Zone_High`.")
     else:
-        st.info("⏸️ No strong BUY signals today.")
+        st.info("️ No strong BUY signals today.")
         
     st.divider()
     st.subheader("📊 Market Overview")
@@ -64,7 +114,7 @@ with tab1:
         st.warning("No data available.")
 
 with tab2:
-    st.subheader(" Strategy Equity Curve (Simulated)")
+    st.subheader("📊 Strategy Equity Curve (Simulated)")
     dates = pd.date_range(start="2023-01-01", periods=100, freq="B")
     np.random.seed(42)
     strat = np.cumprod(1 + np.random.normal(0.0006, 0.015, 100))
@@ -77,7 +127,7 @@ with tab2:
     c1.metric("Total Return", "47.3%"); c2.metric("Sharpe", "0.98"); c3.metric("Max DD", "-18.4%"); c4.metric("Win Rate", "54.2%")
 
 with tab3:
-    st.subheader("⚠️ Risk Rules")
+    st.subheader("️ Risk Rules")
     c1,c2,c3 = st.columns(3)
     c1.metric("Max Position", "5%"); c2.metric("Stop Loss", "7%"); c3.metric("Take Profit", "30%")
     st.info("📖 See Operations Manual v3.0 for stability filtering & execution checklist.")
@@ -114,10 +164,10 @@ with tab5:
     
     st.divider()
     st.subheader("📅 Economic Calendar")
-    econ = pd.DataFrame({"Date":["2026-05-15","2026-05-20","2026-06-10"],"Event":["CBN MPC Meeting","NBS Inflation","NBS GDP"],"Impact":[" High","🔴 High","🔴 High"],"Previous":["26.50%","15.38%","2.7%"],"Forecast":["Hold/↑ 27%","15.8%","3.1%"]})
+    econ = pd.DataFrame({"Date":["2026-05-15","2026-05-20","2026-06-10"],"Event":["CBN MPC Meeting","NBS Inflation","NBS GDP"],"Impact":["🔴 High","🔴 High","🔴 High"],"Previous":["26.50%","15.38%","2.7%"],"Forecast":["Hold/↑ 27%","15.8%","3.1%"]})
     st.dataframe(econ, use_container_width=True, hide_index=True)
     c1,c2,c3,c4 = st.columns(4)
-    c1.metric("MPR","26.50%"); c2.metric("Inflation","15.38%"); c3.metric("FX (NAFEM)","₦1,375/$"); c4.metric("Reserves","$35.2bn")
+    c1.metric("MPR","26.50%"); c2.metric("Inflation","15.69%"); c3.metric("FX (NAFEM)","₦1,375/$"); c4.metric("Reserves","$49.58bn")
 
 st.divider()
 st.caption("Data: Google Sheets (NSE 30) | Model: Technical Scoring | **Not financial advice - DYOR**")
