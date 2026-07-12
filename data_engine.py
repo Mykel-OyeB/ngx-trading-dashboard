@@ -1,5 +1,5 @@
 # data_engine.py - NGX DATA ENGINE (Google Sheets)
-# ✅ NEW: Signal_Stability column to filter whipsaws & track momentum
+# ✅ Updated: HBMNG (formerly WAPCO) mapping + NGX 30 composition ready
 
 import pandas as pd
 import numpy as np
@@ -36,12 +36,11 @@ def generate_ngx_signals(previous_signals=None):
     latest_date = prices_df['Date'].max()
     latest_prices = prices_df[prices_df['Date'] == latest_date]
     if latest_prices.empty:
-        return pd.DataFrame(), f"❌ No valid data for {latest_date}"
+        return pd.DataFrame(), f" No valid data for {latest_date}"
     
     signals = []
     fetch_log = []
     
-    # ✅ STABILITY MAPPING
     strength_map = {"AVOID": 0, "WATCH": 1, "BUY": 2}
     
     for _, row in latest_prices.iterrows():
@@ -78,8 +77,8 @@ def generate_ngx_signals(previous_signals=None):
         # ✅ EVENT TAG
         price_vs_sma20 = abs((price - sma20.iloc[-1]) / sma20.iloc[-1]) if pd.notna(sma20.iloc[-1]) and sma20.iloc[-1] != 0 else 0
         if pd.notna(current_vol) and pd.notna(avg_vol_20d) and avg_vol_20d > 0:
-            if current_vol > avg_vol_20d * 2.5 and price_vs_sma20 > 0.04: event_tag = " Earnings/News"
-            else: event_tag = "📊 Technical"
+            if current_vol > avg_vol_20d * 2.5 and price_vs_sma20 > 0.04: event_tag = "📅 Earnings/News"
+            else: event_tag = " Technical"
         else: event_tag = "📊 Technical"
         
         # ✅ SCORING ENGINE
@@ -108,30 +107,34 @@ def generate_ngx_signals(previous_signals=None):
             entry_high = round(sma20.iloc[-1] * (1 + buffer), 2)
             prev_close = close.iloc[-2] if len(close) >= 2 else price
             gap_pct = abs((price - prev_close) / prev_close) if pd.notna(prev_close) and prev_close != 0 else 0
-            chase_warning = "️ Chase Risk" if (price > entry_high or gap_pct > 0.03) else "✅ Fair Zone"
-            pullback_watch = " Pullback/Zone" if (signal == "BUY" and chase_warning == "✅ Fair Zone") else ""
+            chase_warning = "⚠️ Chase Risk" if (price > entry_high or gap_pct > 0.03) else "✅ Fair Zone"
+            pullback_watch = "🔍 Pullback/Zone" if (signal == "BUY" and chase_warning == "✅ Fair Zone") else ""
         else:
             entry_low = entry_high = 0
             chase_warning = "⚠️ No Data"
             pullback_watch = ""
         
-        # ✅ SIGNAL STABILITY CALCULATION
+        # ✅ SIGNAL STABILITY
         prev = previous_signals.get(ticker, "") if previous_signals else ""
         today_val = strength_map.get(signal, 0)
         prev_val = strength_map.get(prev, -1)
         
-        if prev_val == -1:
-            stability = " New Signal"
-        elif today_val == prev_val:
-            stability = "✅ Continuation"
-        elif today_val > prev_val:
-            stability = "📈 Strengthening"
-        else:
-            stability = "⚠️ Weakening"
+        if prev_val == -1: stability = "🆕 New Signal"
+        elif today_val == prev_val: stability = "✅ Continuation"
+        elif today_val > prev_val: stability = "📈 Strengthening"
+        else: stability = "⚠️ Weakening"
+        
+        # ✅ COMPANY NAME MAPPING (Updated for NGX 30 changes)
+        company_name = (
+            ticker.replace("MTNN", "MTN Nigeria")
+                  .replace("GTCO", "GTCo")
+                  .replace("WAPCO", "HBM Nigeria")  # ✅ OLD TICKER
+                  .replace("HBMNG", "HBM Nigeria")  # ✅ NEW TICKER
+        )
         
         signals.append({
             "Ticker": ticker,
-            "Company": ticker.replace("MTNN", "MTN Nigeria").replace("GTCO", "GTCo"),
+            "Company": company_name,
             "Price(₦)": round(float(price), 2) if pd.notna(price) else 0,
             "Signal": signal,
             "Strength(%)": score,
@@ -150,7 +153,7 @@ def generate_ngx_signals(previous_signals=None):
             "Entry_Zone_High": entry_high,
             "Chase_Warning": chase_warning,
             "Pullback_Watch": pullback_watch,
-            "Signal_Stability": stability  # ✅ NEW
+            "Signal_Stability": stability
         })
         
     df_signals = pd.DataFrame(signals)
@@ -159,7 +162,7 @@ def generate_ngx_signals(previous_signals=None):
         "Stop_Loss", "Take_Profit", "Potential_Return_%", "Date", "Reasons",
         "SMA20", "SMA50", "RSI", "MACD_Hist", "Liquidity_Flag", "Event_Tag",
         "Entry_Zone_Low", "Entry_Zone_High", "Chase_Warning", "Pullback_Watch",
-        "Signal_Stability"  # ✅ NEW
+        "Signal_Stability"
     ]
     status_msg = f"✅ {len(signals)}/{len(latest_prices)} analyzed. " + " | ".join(fetch_log[:10])
     if df_signals.empty: return pd.DataFrame(columns=expected_cols), status_msg
