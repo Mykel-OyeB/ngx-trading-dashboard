@@ -1,5 +1,5 @@
 # data_engine.py - NGX DATA ENGINE (Google Sheets)
-# ✅ HARDENED: No silent exceptions, explicit RSI trend scoring, full traceability
+# ✅ REBUILT: Trend-persistence scoring, state-lock hysteresis, zero silent failures
 
 import pandas as pd
 import numpy as np
@@ -66,9 +66,22 @@ def generate_ngx_signals(previous_signals=None):
         avg_vol_20d = volume.rolling(20).mean().iloc[-1]
         current_vol = volume.iloc[-1]
         
+        # ✅ TREND PERSISTENCE: Count consecutive days price > SMA20
+        above_sma20 = close > sma20
+        trend_days = 0
+        for i in range(len(above_sma20)-1, -1, -1):
+            if above_sma20.iloc[i]:
+                trend_days += 1
+            else:
+                break
+        trend_days = min(trend_days, 20)  # Cap at 20 for scaling
+        
+        # ✅ SMA SLOPE: Is the 20-day MA rising?
+        sma20_slope = sma20.iloc[-1] - sma20.iloc[-5] if len(sma20) >= 5 else 0
+        
         # ✅ LIQUIDITY FLAG
         if pd.notna(current_vol) and pd.notna(avg_vol_20d) and avg_vol_20d > 0:
-            if current_vol < avg_vol_20d * 0.5: liq_flag = "⚠️ Low"
+            if current_vol < avg_vol_20d * 0.5: liq_flag = "️ Low"
             elif current_vol > avg_vol_20d * 3.0: liq_flag = "⚠️ Spike"
             else: liq_flag = "✅ Normal"
         else: liq_flag = "⚠️ No Data"
@@ -76,51 +89,67 @@ def generate_ngx_signals(previous_signals=None):
         # ✅ EVENT TAG
         price_vs_sma20 = abs((price - sma20.iloc[-1]) / sma20.iloc[-1]) if pd.notna(sma20.iloc[-1]) and sma20.iloc[-1] != 0 else 0
         if pd.notna(current_vol) and pd.notna(avg_vol_20d) and avg_vol_20d > 0:
-            if current_vol > avg_vol_20d * 2.5 and price_vs_sma20 > 0.04: event_tag = "📅 Earnings/News"
+            if current_vol > avg_vol_20d * 2.5 and price_vs_sma20 > 0.04: event_tag = " Earnings/News"
             else: event_tag = " Technical"
         else: event_tag = "📊 Technical"
         
-        # ✅ EXPLICIT SCORING (No try/except, fully traceable)
+        # ✅ EXPLICIT TREND-AWARE SCORING (No try/except)
         score = 0
         reasons = []
         
-        # 1. Trend Structure
+        # 1. Trend Structure (30 pts)
         if pd.notna(sma20.iloc[-1]) and price > sma20.iloc[-1]:
-            score += 25; reasons.append("Price>SMA20")
+            score += 15; reasons.append("Price>SMA20")
         if pd.notna(sma20.iloc[-1]) and pd.notna(sma50.iloc[-1]) and sma20.iloc[-1] > sma50.iloc[-1]:
-            score += 20; reasons.append("SMA20>SMA50")
+            score += 15; reasons.append("SMA20>SMA50")
             
-        # 2. RSI (Trend-Aware)
+        # 2. Trend Persistence & Slope (20 pts)
+        if trend_days >= 3:
+            score += 10; reasons.append(f"Trend:{trend_days}d")
+        if sma20_slope > 0:
+            score += 10; reasons.append("SMA20:Rising")
+            
+        # 3. Momentum (RSI + MACD) (25 pts)
         rsi_val = float(rsi.iloc[-1]) if pd.notna(rsi.iloc[-1]) else 0
-        if 40 <= rsi_val <= 65:
-            score += 20; reasons.append("RSI:Optimal")
-        elif 65 < rsi_val <= 75:
-            score += 15; reasons.append("RSI:Strong-Trend")
-        elif rsi_val > 75:
+        if 50 <= rsi_val <= 75:
+            score += 15; reasons.append("RSI:Trend-Zone")
+        elif 75 < rsi_val <= 85:
+            score += 10; reasons.append("RSI:Strong")
+        elif rsi_val > 85:
             score += 5; reasons.append("RSI:Extended")
-        elif rsi_val < 40:
-            score += 10; reasons.append("RSI:Oversold")
+        elif rsi_val < 50:
+            score += 5; reasons.append("RSI:Cooling")
             
-        # 3. Momentum
         if pd.notna(macd_hist.iloc[-1]) and macd_hist.iloc[-1] > 0:
-            score += 15; reasons.append("MACD:>0")
+            score += 10; reasons.append("MACD:>0")
             
-        # 4. Volume Confirmation
+        # 4. Volume/Confirmation (10 pts) - Relaxed for NGX trends
         vol_3d = volume.rolling(3).mean().iloc[-1]
-        if pd.notna(current_vol) and pd.notna(vol_3d) and vol_3d > 0 and current_vol > vol_3d * 1.15:
-            score += 10; reasons.append("Vol:Steady+")
-            
-        # 5. Trend Alignment Bonus
-        if "Price>SMA20" in reasons and "SMA20>SMA50" in reasons and "MACD:>0" in reasons:
+        if pd.notna(current_vol) and pd.notna(vol_3d) and vol_3d > 0:
+            if current_vol >= vol_3d * 0.9:  # Volume steady or rising
+                score += 5; reasons.append("Vol:Steady+")
+            if current_vol > avg_vol_20d * 1.2:  # Above average
+                score += 5; reasons.append("Vol:AboveAvg")
+                
+        # 5. Trend Alignment Bonus (5 pts)
+        if "Price>SMA20" in reasons and "SMA20>SMA50" in reasons and "MACD:>0" in reasons and "SMA20:Rising" in reasons:
             score += 5; reasons.append("Trend:Aligned")
             
         score = min(100, score)
         
-        # Signal Assignment
-        if score >= 75: signal = "BUY"
-        elif score >= 65: signal = "BUY" if ("Price>SMA20" in reasons and "SMA20>SMA50" in reasons) else "WATCH"
-        elif score >= 55: signal = "WATCH"
-        else: signal = "AVOID"
+        # ✅ STATE-LOCK HYSTERESIS (Prevents oscillation)
+        prev_signal = previous_signals.get(ticker, "") if previous_signals else ""
+        if prev_signal == "BUY":
+            # Stay BUY until trend breaks or score drops significantly
+            if price < sma20.iloc[-1] or score < 55:
+                signal = "AVOID" if score < 45 else "WATCH"
+            else:
+                signal = "BUY"
+        else:
+            # Require stronger confirmation to enter BUY
+            if score >= 70: signal = "BUY"
+            elif score >= 55: signal = "WATCH"
+            else: signal = "AVOID"
         
         # ✅ SMART ENTRY ZONES
         if pd.notna(sma20.iloc[-1]) and sma20.iloc[-1] > 0:
@@ -137,13 +166,12 @@ def generate_ngx_signals(previous_signals=None):
             pullback_watch = ""
         
         # ✅ SIGNAL STABILITY
-        prev = previous_signals.get(ticker, "") if previous_signals else ""
         today_val = strength_map.get(signal, 0)
-        prev_val = strength_map.get(prev, -1)
+        prev_val = strength_map.get(prev_signal, -1)
         
         if prev_val == -1: stability = "🆕 New Signal"
         elif today_val == prev_val: stability = "✅ Continuation"
-        elif today_val > prev_val: stability = " Strengthening"
+        elif today_val > prev_val: stability = "📈 Strengthening"
         else: stability = "⚠️ Weakening"
         
         company_name = (
@@ -155,7 +183,8 @@ def generate_ngx_signals(previous_signals=None):
         
         signals.append({
             "Ticker": ticker, "Company": company_name, "Price(₦)": round(price, 2),
-            "Signal": signal, "Strength(%)": score, "RSI_Raw": round(rsi_val, 1),  # ✅ NEW: Raw RSI for verification
+            "Signal": signal, "Strength(%)": score, "RSI_Raw": round(rsi_val, 1),
+            "Trend_Days": trend_days, "SMA20_Slope": round(sma20_slope, 2),  # ✅ NEW: Trend persistence tracking
             "Stop_Loss": round(price * 0.93, 2), "Take_Profit": round(price * 1.30, 2),
             "Potential_Return_%": 30.0, "Date": latest_date.strftime("%Y-%m-%d"),
             "Reasons": ", ".join(reasons), "SMA20": round(float(sma20.iloc[-1]), 2),
@@ -168,7 +197,7 @@ def generate_ngx_signals(previous_signals=None):
         
     df_signals = pd.DataFrame(signals)
     expected_cols = [
-        "Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", "RSI_Raw",
+        "Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", "RSI_Raw", "Trend_Days", "SMA20_Slope",
         "Stop_Loss", "Take_Profit", "Potential_Return_%", "Date", "Reasons",
         "SMA20", "SMA50", "RSI", "MACD_Hist", "Liquidity_Flag", "Event_Tag",
         "Entry_Zone_Low", "Entry_Zone_High", "Chase_Warning", "Pullback_Watch",
