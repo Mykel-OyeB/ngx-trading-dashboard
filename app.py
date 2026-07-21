@@ -1,5 +1,5 @@
 # app.py - NGX Algorithmic Trading Dashboard
-# ✅ FORCED REFRESH + LIVE DIAGNOSTIC PANEL FOR VERIFICATION
+# ✅ FORCED REFRESH + ENHANCED DIAGNOSTIC PANEL (Trend persistence visible)
 
 import streamlit as st
 import pandas as pd
@@ -20,7 +20,7 @@ except Exception as e:
     st.error(f"⚠️ Import Error: {e}")
     st.stop()
 
-st.set_page_config(page_title="NGX Trading Signals", page_icon="", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="NGX Trading Signals", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
 
 # Fetch previous signals
 def get_streamlit_previous_signals():
@@ -67,14 +67,14 @@ st.title("🇳🇬 NGX Algorithmic Trading Dashboard")
 st.markdown(f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} WAT")
 st.divider()
 
-# ✅ LIVE DIAGNOSTIC PANEL (Verify scoring logic)
-st.subheader(" Scoring Verification (Top 10 Stocks)")
+# ✅ ENHANCED DIAGNOSTIC PANEL (Trend persistence + scoring verification)
+st.subheader(" Scoring & Trend Verification (Top 10)")
 if not signals_df.empty:
     st.dataframe(
-        signals_df[["Ticker", "Price(₦)", "RSI_Raw", "Reasons", "Strength(%)", "Signal"]].head(10),
+        signals_df[["Ticker", "Price(₦)", "Signal", "Strength(%)", "RSI_Raw", "Trend_Days", "SMA20_Slope", "Reasons"]].head(10),
         use_container_width=True, hide_index=True
     )
-    st.caption("💡 Check RSI_Raw vs Reasons. Strong trends (65-75) should show `RSI:Strong-Trend`.")
+    st.caption("💡 **Trend-Days** = Consecutive days price > SMA20. **SMA20_Slope** > 0 = Rising trend. Strong trends should show BUY with Trend_Days ≥3.")
 st.divider()
 
 st.sidebar.header("📊 System Status")
@@ -87,20 +87,20 @@ st.sidebar.divider()
 if fx_risk["alert"]: st.sidebar.error(f"⚠️ FX RISK: {fx_risk['message']}")
 else: st.sidebar.success(f"✅ FX: {fx_risk['message']}")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎯 Today's Signals", "📈 Performance", "⚙️ Risk & Settings", "📊 Analytics", "📰 Market News"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎯 Today's Signals", "📈 Performance", "⚙️ Risk & Settings", "📊 Analytics", " Market News"])
 
 with tab1:
-    st.subheader(" Buy Signals - " + datetime.now().strftime("%B %d, %Y"))
+    st.subheader("🟢 Buy Signals - " + datetime.now().strftime("%B %d, %Y"))
     buy_signals = signals_df[signals_df["Signal"] == "BUY"].copy() if not signals_df.empty else pd.DataFrame()
     if not buy_signals.empty:
-        display_cols = ["Ticker", "Company", "Price(₦)", "Strength(%)", "Signal_Stability", "Chase_Warning", "Entry_Zone_Low", "Entry_Zone_High", "Liquidity_Flag", "Event_Tag", "SMA20", "SMA50", "RSI", "MACD_Hist", "Stop_Loss", "Take_Profit"]
+        display_cols = ["Ticker", "Company", "Price(₦)", "Strength(%)", "Signal_Stability", "Chase_Warning", "Entry_Zone_Low", "Entry_Zone_High", "Liquidity_Flag", "Event_Tag", "Trend_Days", "SMA20", "RSI", "Stop_Loss", "Take_Profit"]
         st.dataframe(buy_signals[display_cols], use_container_width=True, hide_index=True)
-        st.caption("💡 EXECUTION RULE: Only enter on `✅ Continuation` or `📈 Strengthening`. If `️ Weakening`, tighten SL or wait.")
+        st.caption("💡 EXECUTION RULE: Enter on `✅ Continuation` or `📈 Strengthening`. Tighten SL if `⚠️ Weakening`. Never chase above `Entry_Zone_High`.")
     else: st.info("⏸️ No strong BUY signals today.")
     st.divider()
     st.subheader("📊 Market Overview")
     if not signals_df.empty:
-        st.dataframe(signals_df[["Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", "Signal_Stability", "Chase_Warning", "Entry_Zone_Low", "Entry_Zone_High", "Liquidity_Flag", "Event_Tag", "Reasons"]], use_container_width=True, hide_index=True)
+        st.dataframe(signals_df[["Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", "Signal_Stability", "Trend_Days", "Chase_Warning", "Entry_Zone_Low", "Entry_Zone_High", "Liquidity_Flag", "Event_Tag", "Reasons"]], use_container_width=True, hide_index=True)
     else: st.warning("No data available.")
 
 with tab2:
@@ -123,11 +123,11 @@ with tab3:
     st.info("📖 See Operations Manual v3.0 for stability filtering & execution checklist.")
 
 with tab4:
-    st.subheader(" Analytics")
-    st.info("📅 Activates after 60 days of signal history (~July 2026). Collecting data daily.")
+    st.subheader("📊 Analytics")
+    st.info(" Activates after 60 days of signal history (~July 2026). Collecting data daily.")
 
 with tab5:
-    st.subheader("📰 Market News & Economic Data")
+    st.subheader(" Market News & Economic Data")
     @st.cache_data(ttl=1800)
     def fetch_news():
         articles = []
@@ -147,12 +147,12 @@ with tab5:
     with st.spinner("📡 Fetching..."): news_df = fetch_news()
     if not news_df.empty:
         for _, r in news_df.iterrows():
-            st.markdown(f"**{r['Headline']}** | 📌 *{r['Source']}* | 🔗 [Read]({r['Link']})")
+            st.markdown(f"**{r['Headline']}** | 📌 *{r['Source']}* |  [Read]({r['Link']})")
             st.divider()
     else: st.warning("⚠️ No feeds available.")
     st.divider()
-    st.subheader("📅 Economic Calendar")
-    econ = pd.DataFrame({"Date":["2026-05-15","2026-05-20","2026-06-10"],"Event":["CBN MPC Meeting","NBS Inflation","NBS GDP"],"Impact":["🔴 High","🔴 High","🔴 High"],"Previous":["26.50%","15.38%","2.7%"],"Forecast":["Hold/↑ 27%","15.8%","3.1%"]})
+    st.subheader(" Economic Calendar")
+    econ = pd.DataFrame({"Date":["2026-05-15","2026-05-20","2026-06-10"],"Event":["CBN MPC Meeting","NBS Inflation","NBS GDP"],"Impact":["🔴 High"," High","🔴 High"],"Previous":["26.50%","15.38%","2.7%"],"Forecast":["Hold/↑ 27%","15.8%","3.1%"]})
     st.dataframe(econ, use_container_width=True, hide_index=True)
     c1,c2,c3,c4 = st.columns(4)
     c1.metric("MPR","26.50%"); c2.metric("Inflation","15.38%"); c3.metric("FX (NAFEM)","₦1,375/$"); c4.metric("Reserves","$35.2bn")
