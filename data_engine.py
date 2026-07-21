@@ -1,5 +1,5 @@
 # data_engine.py - NGX DATA ENGINE (Google Sheets)
-# ✅ FIXED: Trend-aware RSI scoring + Trend Alignment Bonus to catch rallies early
+# ✅ HARDENED: No silent exceptions, explicit RSI trend scoring, full traceability
 
 import pandas as pd
 import numpy as np
@@ -36,7 +36,7 @@ def generate_ngx_signals(previous_signals=None):
     latest_date = prices_df['Date'].max()
     latest_prices = prices_df[prices_df['Date'] == latest_date]
     if latest_prices.empty:
-        return pd.DataFrame(), f" No valid data for {latest_date}"
+        return pd.DataFrame(), f"❌ No valid data for {latest_date}"
     
     signals = []
     fetch_log = []
@@ -62,7 +62,7 @@ def generate_ngx_signals(previous_signals=None):
         macd = ema12 - ema26
         macd_hist = macd - macd.ewm(span=9, adjust=False).mean()
         
-        price = row['Close']
+        price = float(row['Close']) if pd.notna(row['Close']) else 0
         avg_vol_20d = volume.rolling(20).mean().iloc[-1]
         current_vol = volume.iloc[-1]
         
@@ -80,31 +80,43 @@ def generate_ngx_signals(previous_signals=None):
             else: event_tag = " Technical"
         else: event_tag = "📊 Technical"
         
-        # ✅ SCORING ENGINE (TREND-AWARE)
+        # ✅ EXPLICIT SCORING (No try/except, fully traceable)
         score = 0
         reasons = []
-        try:
-            if pd.notna(price) and pd.notna(sma20.iloc[-1]) and price > sma20.iloc[-1]: score += 25; reasons.append("Price>SMA20")
-            if pd.notna(sma20.iloc[-1]) and pd.notna(sma50.iloc[-1]) and sma20.iloc[-1] > sma50.iloc[-1]: score += 20; reasons.append("SMA20>SMA50")
+        
+        # 1. Trend Structure
+        if pd.notna(sma20.iloc[-1]) and price > sma20.iloc[-1]:
+            score += 25; reasons.append("Price>SMA20")
+        if pd.notna(sma20.iloc[-1]) and pd.notna(sma50.iloc[-1]) and sma20.iloc[-1] > sma50.iloc[-1]:
+            score += 20; reasons.append("SMA20>SMA50")
             
-            # ✅ FIXED: RSI now rewards strong trends instead of penalizing them
-            rsi_val = rsi.iloc[-1] if pd.notna(rsi.iloc[-1]) else 0
-            if 40 <= rsi_val <= 65: score += 20; reasons.append("RSI:Optimal")
-            elif 65 < rsi_val <= 75: score += 15; reasons.append("RSI:Strong-Trend")
-            elif rsi_val > 75: score += 5; reasons.append("RSI:Extended")
-            elif rsi_val < 40: score += 10; reasons.append("RSI:Oversold")
+        # 2. RSI (Trend-Aware)
+        rsi_val = float(rsi.iloc[-1]) if pd.notna(rsi.iloc[-1]) else 0
+        if 40 <= rsi_val <= 65:
+            score += 20; reasons.append("RSI:Optimal")
+        elif 65 < rsi_val <= 75:
+            score += 15; reasons.append("RSI:Strong-Trend")
+        elif rsi_val > 75:
+            score += 5; reasons.append("RSI:Extended")
+        elif rsi_val < 40:
+            score += 10; reasons.append("RSI:Oversold")
             
-            if pd.notna(macd_hist.iloc[-1]) and macd_hist.iloc[-1] > 0: score += 15; reasons.append("MACD:>0")
-            vol_3d = volume.rolling(3).mean().iloc[-1]
-            if pd.notna(current_vol) and pd.notna(vol_3d) and vol_3d > 0 and current_vol > vol_3d * 1.15: score += 10; reasons.append("Vol:Steady+")
+        # 3. Momentum
+        if pd.notna(macd_hist.iloc[-1]) and macd_hist.iloc[-1] > 0:
+            score += 15; reasons.append("MACD:>0")
             
-            # ✅ TREND ALIGNMENT BONUS: +5 if all major trend indicators confirm
-            if ("Price>SMA20" in reasons) and ("SMA20>SMA50" in reasons) and ("MACD:>0" in reasons):
-                score += 5; reasons.append("Trend:Aligned")
-                
-        except Exception: pass
+        # 4. Volume Confirmation
+        vol_3d = volume.rolling(3).mean().iloc[-1]
+        if pd.notna(current_vol) and pd.notna(vol_3d) and vol_3d > 0 and current_vol > vol_3d * 1.15:
+            score += 10; reasons.append("Vol:Steady+")
+            
+        # 5. Trend Alignment Bonus
+        if "Price>SMA20" in reasons and "SMA20>SMA50" in reasons and "MACD:>0" in reasons:
+            score += 5; reasons.append("Trend:Aligned")
+            
         score = min(100, score)
         
+        # Signal Assignment
         if score >= 75: signal = "BUY"
         elif score >= 65: signal = "BUY" if ("Price>SMA20" in reasons and "SMA20>SMA50" in reasons) else "WATCH"
         elif score >= 55: signal = "WATCH"
@@ -115,8 +127,8 @@ def generate_ngx_signals(previous_signals=None):
             buffer = 0.015
             entry_low = round(sma20.iloc[-1] * (1 - buffer), 2)
             entry_high = round(sma20.iloc[-1] * (1 + buffer), 2)
-            prev_close = close.iloc[-2] if len(close) >= 2 else price
-            gap_pct = abs((price - prev_close) / prev_close) if pd.notna(prev_close) and prev_close != 0 else 0
+            prev_close = float(close.iloc[-2]) if len(close) >= 2 and pd.notna(close.iloc[-2]) else price
+            gap_pct = abs((price - prev_close) / prev_close) if prev_close != 0 else 0
             chase_warning = "⚠️ Chase Risk" if (price > entry_high or gap_pct > 0.03) else "✅ Fair Zone"
             pullback_watch = "🔍 Pullback/Zone" if (signal == "BUY" and chase_warning == "✅ Fair Zone") else ""
         else:
@@ -131,10 +143,9 @@ def generate_ngx_signals(previous_signals=None):
         
         if prev_val == -1: stability = "🆕 New Signal"
         elif today_val == prev_val: stability = "✅ Continuation"
-        elif today_val > prev_val: stability = "📈 Strengthening"
+        elif today_val > prev_val: stability = " Strengthening"
         else: stability = "⚠️ Weakening"
         
-        # ✅ COMPANY NAME MAPPING
         company_name = (
             ticker.replace("MTNN", "MTN Nigeria")
                   .replace("GTCO", "GTCo")
@@ -143,32 +154,21 @@ def generate_ngx_signals(previous_signals=None):
         )
         
         signals.append({
-            "Ticker": ticker,
-            "Company": company_name,
-            "Price(₦)": round(float(price), 2) if pd.notna(price) else 0,
-            "Signal": signal,
-            "Strength(%)": score,
-            "Stop_Loss": round(float(price) * 0.93, 2) if pd.notna(price) else 0,
-            "Take_Profit": round(float(price) * 1.30, 2) if pd.notna(price) else 0,
-            "Potential_Return_%": 30.0,
-            "Date": latest_date.strftime("%Y-%m-%d"),
-            "Reasons": ", ".join(reasons),
-            "SMA20": round(float(sma20.iloc[-1]), 2) if pd.notna(sma20.iloc[-1]) else 0,
-            "SMA50": round(float(sma50.iloc[-1]), 2) if pd.notna(sma50.iloc[-1]) else 0,
-            "RSI": round(float(rsi.iloc[-1]), 1) if pd.notna(rsi.iloc[-1]) else 0,
-            "MACD_Hist": round(float(macd_hist.iloc[-1]), 4) if pd.notna(macd_hist.iloc[-1]) else 0,
-            "Liquidity_Flag": liq_flag,
-            "Event_Tag": event_tag,
-            "Entry_Zone_Low": entry_low,
-            "Entry_Zone_High": entry_high,
-            "Chase_Warning": chase_warning,
-            "Pullback_Watch": pullback_watch,
+            "Ticker": ticker, "Company": company_name, "Price(₦)": round(price, 2),
+            "Signal": signal, "Strength(%)": score, "RSI_Raw": round(rsi_val, 1),  # ✅ NEW: Raw RSI for verification
+            "Stop_Loss": round(price * 0.93, 2), "Take_Profit": round(price * 1.30, 2),
+            "Potential_Return_%": 30.0, "Date": latest_date.strftime("%Y-%m-%d"),
+            "Reasons": ", ".join(reasons), "SMA20": round(float(sma20.iloc[-1]), 2),
+            "SMA50": round(float(sma50.iloc[-1]), 2), "RSI": round(rsi_val, 1),
+            "MACD_Hist": round(float(macd_hist.iloc[-1]), 4), "Liquidity_Flag": liq_flag,
+            "Event_Tag": event_tag, "Entry_Zone_Low": entry_low, "Entry_Zone_High": entry_high,
+            "Chase_Warning": chase_warning, "Pullback_Watch": pullback_watch,
             "Signal_Stability": stability
         })
         
     df_signals = pd.DataFrame(signals)
     expected_cols = [
-        "Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", 
+        "Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", "RSI_Raw",
         "Stop_Loss", "Take_Profit", "Potential_Return_%", "Date", "Reasons",
         "SMA20", "SMA50", "RSI", "MACD_Hist", "Liquidity_Flag", "Event_Tag",
         "Entry_Zone_Low", "Entry_Zone_High", "Chase_Warning", "Pullback_Watch",
