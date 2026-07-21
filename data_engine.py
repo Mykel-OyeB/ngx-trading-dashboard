@@ -1,5 +1,5 @@
 # data_engine.py - NGX DATA ENGINE (Google Sheets)
-# ✅ FINAL LOCK: NGX-aware volume, state-lock hysteresis, explicit scoring, diagnostic-ready
+# ✅ CORRECTED: Fixed column name typo + verified all keys match exactly
 
 import pandas as pd
 import numpy as np
@@ -47,7 +47,7 @@ def generate_ngx_signals(previous_signals=None):
         ticker_history = prices_df[prices_df['Ticker'].str.strip() == ticker].sort_values('Date').tail(60)
         
         if len(ticker_history) < 20:
-            fetch_log.append(f"{ticker}: ️")
+            fetch_log.append(f"{ticker}: ⚠️")
             continue
         fetch_log.append(f"{ticker}: ✅")
         
@@ -80,14 +80,14 @@ def generate_ngx_signals(previous_signals=None):
         # ✅ LIQUIDITY FLAG
         if pd.notna(current_vol) and pd.notna(avg_vol_20d) and avg_vol_20d > 0:
             if current_vol < avg_vol_20d * 0.5: liq_flag = "⚠️ Low"
-            elif current_vol > avg_vol_20d * 3.0: liq_flag = "️ Spike"
+            elif current_vol > avg_vol_20d * 3.0: liq_flag = "⚠️ Spike"
             else: liq_flag = "✅ Normal"
         else: liq_flag = "⚠️ No Data"
         
         # ✅ EVENT TAG
         price_vs_sma20 = abs((price - sma20.iloc[-1]) / sma20.iloc[-1]) if pd.notna(sma20.iloc[-1]) and sma20.iloc[-1] != 0 else 0
         if pd.notna(current_vol) and pd.notna(avg_vol_20d) and avg_vol_20d > 0:
-            if current_vol > avg_vol_20d * 2.5 and price_vs_sma20 > 0.04: event_tag = "📅 Earnings/News"
+            if current_vol > avg_vol_20d * 2.5 and price_vs_sma20 > 0.04: event_tag = " Earnings/News"
             else: event_tag = "📊 Technical"
         else: event_tag = "📊 Technical"
         
@@ -116,7 +116,7 @@ def generate_ngx_signals(previous_signals=None):
         vol_ratio = current_vol / avg_vol_20d if pd.notna(current_vol) and pd.notna(avg_vol_20d) and avg_vol_20d > 0 else 0
         if vol_ratio >= 1.0: score += 10; reasons.append("Vol:High-Interest")
         elif vol_ratio >= 0.5: score += 5; reasons.append("Vol:Active")
-        elif vol_ratio < 0.5 and trend_days >= 3: score += 5; reasons.append("Vol:Bid-Driven")  # ✅ Illiquid uptrend acknowledged
+        elif vol_ratio < 0.5 and trend_days >= 3: score += 5; reasons.append("Vol:Bid-Driven")
             
         # 5. Trend Alignment Bonus (5 pts)
         if all(r in reasons for r in ["Price>SMA20", "SMA20>SMA50", "MACD:>0", "SMA20:Rising"]):
@@ -145,20 +145,20 @@ def generate_ngx_signals(previous_signals=None):
             prev_close = float(close.iloc[-2]) if len(close) >= 2 and pd.notna(close.iloc[-2]) else price
             gap_pct = abs((price - prev_close) / prev_close) if prev_close != 0 else 0
             chase_warning = "️ Chase Risk" if (price > entry_high or gap_pct > 0.03) else "✅ Fair Zone"
-            pullback_watch = "🔍 Pullback/Zone" if (signal == "BUY" and chase_warning == "✅ Fair Zone") else ""
+            pullback_watch = " Pullback/Zone" if (signal == "BUY" and chase_warning == "✅ Fair Zone") else ""
         else:
             entry_low = entry_high = 0
-            chase_warning = "️ No Data"
+            chase_warning = "⚠️ No Data"
             pullback_watch = ""
         
         # ✅ SIGNAL STABILITY
         today_val = strength_map.get(signal, 0)
         prev_val = strength_map.get(prev_signal, -1)
         
-        if prev_val == -1: stability = "🆕 New Signal"
+        if prev_val == -1: stability = " New Signal"
         elif today_val == prev_val: stability = "✅ Continuation"
-        elif today_val > prev_val: stability = " Strengthening"
-        else: stability = "⚠️ Weakening"
+        elif today_val > prev_val: stability = "📈 Strengthening"
+        else: stability = "️ Weakening"
         
         company_name = (
             ticker.replace("MTNN", "MTN Nigeria")
@@ -183,7 +183,7 @@ def generate_ngx_signals(previous_signals=None):
         
     df_signals = pd.DataFrame(signals)
     expected_cols = [
-        "Ticker", "Company", "Price()", "Signal", "Strength(%)", "RSI_Raw", "Trend_Days", "SMA20_Slope",
+        "Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", "RSI_Raw", "Trend_Days", "SMA20_Slope",
         "Stop_Loss", "Take_Profit", "Potential_Return_%", "Date", "Reasons",
         "SMA20", "SMA50", "RSI", "MACD_Hist", "Liquidity_Flag", "Event_Tag",
         "Entry_Zone_Low", "Entry_Zone_High", "Chase_Warning", "Pullback_Watch",
