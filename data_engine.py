@@ -1,5 +1,5 @@
 # data_engine.py - NGX DATA ENGINE (Google Sheets)
-# ✅ Updated: HBMNG (formerly WAPCO) mapping + NGX 30 composition ready
+# ✅ FIXED: Trend-aware RSI scoring + Trend Alignment Bonus to catch rallies early
 
 import pandas as pd
 import numpy as np
@@ -40,7 +40,6 @@ def generate_ngx_signals(previous_signals=None):
     
     signals = []
     fetch_log = []
-    
     strength_map = {"AVOID": 0, "WATCH": 1, "BUY": 2}
     
     for _, row in latest_prices.iterrows():
@@ -81,17 +80,28 @@ def generate_ngx_signals(previous_signals=None):
             else: event_tag = " Technical"
         else: event_tag = "📊 Technical"
         
-        # ✅ SCORING ENGINE
+        # ✅ SCORING ENGINE (TREND-AWARE)
         score = 0
         reasons = []
         try:
             if pd.notna(price) and pd.notna(sma20.iloc[-1]) and price > sma20.iloc[-1]: score += 25; reasons.append("Price>SMA20")
             if pd.notna(sma20.iloc[-1]) and pd.notna(sma50.iloc[-1]) and sma20.iloc[-1] > sma50.iloc[-1]: score += 20; reasons.append("SMA20>SMA50")
-            if pd.notna(rsi.iloc[-1]) and 40 < rsi.iloc[-1] < 65: score += 20; reasons.append("RSI:40-65")
-            elif pd.notna(rsi.iloc[-1]) and rsi.iloc[-1] < 40: score += 10; reasons.append("RSI:<40")
+            
+            # ✅ FIXED: RSI now rewards strong trends instead of penalizing them
+            rsi_val = rsi.iloc[-1] if pd.notna(rsi.iloc[-1]) else 0
+            if 40 <= rsi_val <= 65: score += 20; reasons.append("RSI:Optimal")
+            elif 65 < rsi_val <= 75: score += 15; reasons.append("RSI:Strong-Trend")
+            elif rsi_val > 75: score += 5; reasons.append("RSI:Extended")
+            elif rsi_val < 40: score += 10; reasons.append("RSI:Oversold")
+            
             if pd.notna(macd_hist.iloc[-1]) and macd_hist.iloc[-1] > 0: score += 15; reasons.append("MACD:>0")
             vol_3d = volume.rolling(3).mean().iloc[-1]
             if pd.notna(current_vol) and pd.notna(vol_3d) and vol_3d > 0 and current_vol > vol_3d * 1.15: score += 10; reasons.append("Vol:Steady+")
+            
+            # ✅ TREND ALIGNMENT BONUS: +5 if all major trend indicators confirm
+            if ("Price>SMA20" in reasons) and ("SMA20>SMA50" in reasons) and ("MACD:>0" in reasons):
+                score += 5; reasons.append("Trend:Aligned")
+                
         except Exception: pass
         score = min(100, score)
         
@@ -124,12 +134,12 @@ def generate_ngx_signals(previous_signals=None):
         elif today_val > prev_val: stability = "📈 Strengthening"
         else: stability = "⚠️ Weakening"
         
-        # ✅ COMPANY NAME MAPPING (Updated for NGX 30 changes)
+        # ✅ COMPANY NAME MAPPING
         company_name = (
             ticker.replace("MTNN", "MTN Nigeria")
                   .replace("GTCO", "GTCo")
-                  .replace("WAPCO", "HBM Nigeria")  # ✅ OLD TICKER
-                  .replace("HBMNG", "HBM Nigeria")  # ✅ NEW TICKER
+                  .replace("WAPCO", "HBM Nigeria")
+                  .replace("HBMNG", "HBM Nigeria")
         )
         
         signals.append({
