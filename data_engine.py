@@ -1,5 +1,5 @@
 # data_engine.py - NGX DATA ENGINE (Google Sheets)
-# ✅ CORRECTED: Fixed column name typo + verified all keys match exactly
+# ✅ REFINED: NGX-aware Event_Tag logic + all Day 1 validations preserved
 
 import pandas as pd
 import numpy as np
@@ -47,7 +47,7 @@ def generate_ngx_signals(previous_signals=None):
         ticker_history = prices_df[prices_df['Ticker'].str.strip() == ticker].sort_values('Date').tail(60)
         
         if len(ticker_history) < 20:
-            fetch_log.append(f"{ticker}: ⚠️")
+            fetch_log.append(f"{ticker}: ️")
             continue
         fetch_log.append(f"{ticker}: ✅")
         
@@ -84,14 +84,21 @@ def generate_ngx_signals(previous_signals=None):
             else: liq_flag = "✅ Normal"
         else: liq_flag = "⚠️ No Data"
         
-        # ✅ EVENT TAG
+        # ✅ NGX-AWARE EVENT TAG (Refined for earnings/news reality)
+        rsi_val = float(rsi.iloc[-1]) if pd.notna(rsi.iloc[-1]) else 0
         price_vs_sma20 = abs((price - sma20.iloc[-1]) / sma20.iloc[-1]) if pd.notna(sma20.iloc[-1]) and sma20.iloc[-1] != 0 else 0
-        if pd.notna(current_vol) and pd.notna(avg_vol_20d) and avg_vol_20d > 0:
-            if current_vol > avg_vol_20d * 2.5 and price_vs_sma20 > 0.04: event_tag = " Earnings/News"
-            else: event_tag = "📊 Technical"
-        else: event_tag = "📊 Technical"
+        vol_ratio = current_vol / avg_vol_20d if pd.notna(current_vol) and pd.notna(avg_vol_20d) and avg_vol_20d > 0 else 0
         
-        # ✅ NGX-AWARE SCORING (Explicit, no try/except)
+        # NGX earnings often show: moderate volume + sustained momentum + RSI in trend zone
+        vol_trigger = vol_ratio >= 1.8
+        momentum_trigger = price_vs_sma20 > 0.03 or (rsi_val > 60 and pd.notna(macd_hist.iloc[-1]) and macd_hist.iloc[-1] > 0)
+        
+        if vol_trigger and momentum_trigger:
+            event_tag = "📅 Earnings/News"
+        else:
+            event_tag = "📊 Technical"
+        
+        # ✅ NGX-AWARE SCORING (Unchanged from Day 1 validation)
         score = 0
         reasons = []
         
@@ -104,7 +111,6 @@ def generate_ngx_signals(previous_signals=None):
         if sma20_slope > 0: score += 10; reasons.append("SMA20:Rising")
             
         # 3. Momentum (RSI + MACD) (25 pts)
-        rsi_val = float(rsi.iloc[-1]) if pd.notna(rsi.iloc[-1]) else 0
         if 50 <= rsi_val <= 75: score += 15; reasons.append("RSI:Trend-Zone")
         elif 75 < rsi_val <= 85: score += 10; reasons.append("RSI:Strong")
         elif rsi_val > 85: score += 5; reasons.append("RSI:Extended")
@@ -112,8 +118,7 @@ def generate_ngx_signals(previous_signals=None):
             
         if pd.notna(macd_hist.iloc[-1]) and macd_hist.iloc[-1] > 0: score += 10; reasons.append("MACD:>0")
             
-        # 4. ✅ NGX-AWARE VOLUME (Captures bid/offer trends & liquidity dynamics)
-        vol_ratio = current_vol / avg_vol_20d if pd.notna(current_vol) and pd.notna(avg_vol_20d) and avg_vol_20d > 0 else 0
+        # 4. Volume/Confirmation (10 pts)
         if vol_ratio >= 1.0: score += 10; reasons.append("Vol:High-Interest")
         elif vol_ratio >= 0.5: score += 5; reasons.append("Vol:Active")
         elif vol_ratio < 0.5 and trend_days >= 3: score += 5; reasons.append("Vol:Bid-Driven")
@@ -124,10 +129,9 @@ def generate_ngx_signals(previous_signals=None):
             
         score = min(100, score)
         
-        # ✅ STATE-LOCK HYSTERESIS (Eliminates oscillation)
+        # ✅ STATE-LOCK HYSTERESIS (Unchanged)
         prev_signal = previous_signals.get(ticker, "") if previous_signals else ""
         if prev_signal == "BUY":
-            # Stay BUY until trend breaks or score collapses
             if price < sma20.iloc[-1] or score < 45:
                 signal = "AVOID" if score < 35 else "WATCH"
             else:
@@ -137,28 +141,28 @@ def generate_ngx_signals(previous_signals=None):
             elif score >= 55: signal = "WATCH"
             else: signal = "AVOID"
         
-        # ✅ SMART ENTRY ZONES
+        # ✅ SMART ENTRY ZONES (Unchanged)
         if pd.notna(sma20.iloc[-1]) and sma20.iloc[-1] > 0:
             buffer = 0.015
             entry_low = round(sma20.iloc[-1] * (1 - buffer), 2)
             entry_high = round(sma20.iloc[-1] * (1 + buffer), 2)
             prev_close = float(close.iloc[-2]) if len(close) >= 2 and pd.notna(close.iloc[-2]) else price
             gap_pct = abs((price - prev_close) / prev_close) if prev_close != 0 else 0
-            chase_warning = "️ Chase Risk" if (price > entry_high or gap_pct > 0.03) else "✅ Fair Zone"
-            pullback_watch = " Pullback/Zone" if (signal == "BUY" and chase_warning == "✅ Fair Zone") else ""
+            chase_warning = "⚠️ Chase Risk" if (price > entry_high or gap_pct > 0.03) else "✅ Fair Zone"
+            pullback_watch = "🔍 Pullback/Zone" if (signal == "BUY" and chase_warning == "✅ Fair Zone") else ""
         else:
             entry_low = entry_high = 0
             chase_warning = "⚠️ No Data"
             pullback_watch = ""
         
-        # ✅ SIGNAL STABILITY
+        # ✅ SIGNAL STABILITY (Unchanged)
         today_val = strength_map.get(signal, 0)
         prev_val = strength_map.get(prev_signal, -1)
         
-        if prev_val == -1: stability = " New Signal"
+        if prev_val == -1: stability = "🆕 New Signal"
         elif today_val == prev_val: stability = "✅ Continuation"
         elif today_val > prev_val: stability = "📈 Strengthening"
-        else: stability = "️ Weakening"
+        else: stability = "⚠️ Weakening"
         
         company_name = (
             ticker.replace("MTNN", "MTN Nigeria")
