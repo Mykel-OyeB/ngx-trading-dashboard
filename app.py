@@ -120,7 +120,7 @@ with tab1:
     if not buy_signals.empty:
         display_cols = ["Ticker", "Company", "Price(₦)", "Strength(%)", "Signal_Stability", "Chase_Warning", "Entry_Zone_Low", "Entry_Zone_High", "Liquidity_Flag", "Event_Tag", "Trend_Days", "SMA20", "RSI", "Stop_Loss", "Take_Profit"]
         st.dataframe(buy_signals[display_cols], use_container_width=True, hide_index=True)
-        st.caption("💡 EXECUTION RULE: Enter on `✅ Continuation` or `📈 Strengthening`. Tighten SL if `⚠️ Weakening`. In strong trends, `⚠️ Chase Risk` means use LIMIT orders at `Entry_Zone_Low`, never market orders.")
+        st.caption("💡 **EXECUTION RULE:**\n• `✅ Fair Zone` or `🔍 Pullback/Zone` → LIMIT at `Entry_Zone_Low` (early entry)\n• `📈 Trend-Following` → LIMIT at `Entry_Zone_Low` (3-day dip play, not chase)\n• `⚠️ Chase Risk` → WAIT for pullback or skip\n• `⚠️ Weakening` → Tighten SL, do not add")
     else: st.info("⏸️ No strong BUY signals today.")
     st.divider()
     st.subheader("📊 Market Overview")
