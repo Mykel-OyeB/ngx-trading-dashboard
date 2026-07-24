@@ -1,5 +1,5 @@
 # data_engine.py - NGX DATA ENGINE (Google Sheets)
-# ✅ REFINED: NGX-aware Event_Tag logic + all Day 1 validations preserved
+# ✅ OPTIMIZED: Adaptive entry zones + stricter event tagging for NGX reality
 
 import pandas as pd
 import numpy as np
@@ -84,21 +84,21 @@ def generate_ngx_signals(previous_signals=None):
             else: liq_flag = "✅ Normal"
         else: liq_flag = "⚠️ No Data"
         
-        # ✅ NGX-AWARE EVENT TAG (Refined for earnings/news reality)
+        # ✅ NGX-AWARE EVENT TAG (Stricter to avoid false positives)
         rsi_val = float(rsi.iloc[-1]) if pd.notna(rsi.iloc[-1]) else 0
         price_vs_sma20 = abs((price - sma20.iloc[-1]) / sma20.iloc[-1]) if pd.notna(sma20.iloc[-1]) and sma20.iloc[-1] != 0 else 0
         vol_ratio = current_vol / avg_vol_20d if pd.notna(current_vol) and pd.notna(avg_vol_20d) and avg_vol_20d > 0 else 0
         
-        # NGX earnings often show: moderate volume + sustained momentum + RSI in trend zone
-        vol_trigger = vol_ratio >= 1.8
-        momentum_trigger = price_vs_sma20 > 0.03 or (rsi_val > 60 and pd.notna(macd_hist.iloc[-1]) and macd_hist.iloc[-1] > 0)
+        # NGX earnings/news typically require: >2x volume AND >5% price displacement
+        vol_trigger = vol_ratio >= 2.0
+        momentum_trigger = price_vs_sma20 > 0.05
         
         if vol_trigger and momentum_trigger:
             event_tag = "📅 Earnings/News"
         else:
             event_tag = "📊 Technical"
         
-        # ✅ NGX-AWARE SCORING (Unchanged from Day 1 validation)
+        # ✅ NGX-AWARE SCORING
         score = 0
         reasons = []
         
@@ -129,7 +129,7 @@ def generate_ngx_signals(previous_signals=None):
             
         score = min(100, score)
         
-        # ✅ STATE-LOCK HYSTERESIS (Unchanged)
+        # ✅ STATE-LOCK HYSTERESIS
         prev_signal = previous_signals.get(ticker, "") if previous_signals else ""
         if prev_signal == "BUY":
             if price < sma20.iloc[-1] or score < 45:
@@ -141,9 +141,14 @@ def generate_ngx_signals(previous_signals=None):
             elif score >= 55: signal = "WATCH"
             else: signal = "AVOID"
         
-        # ✅ SMART ENTRY ZONES (Unchanged)
+        # ✅ ADAPTIVE ENTRY ZONES (Wider buffer for strong trends)
         if pd.notna(sma20.iloc[-1]) and sma20.iloc[-1] > 0:
-            buffer = 0.015
+            # Strong trends naturally run 2-3% above SMA20
+            if trend_days >= 5 and sma20_slope > 0:
+                buffer = 0.025  # 2.5% for sustained trends
+            else:
+                buffer = 0.015  # 1.5% normal
+                
             entry_low = round(sma20.iloc[-1] * (1 - buffer), 2)
             entry_high = round(sma20.iloc[-1] * (1 + buffer), 2)
             prev_close = float(close.iloc[-2]) if len(close) >= 2 and pd.notna(close.iloc[-2]) else price
@@ -155,7 +160,7 @@ def generate_ngx_signals(previous_signals=None):
             chase_warning = "⚠️ No Data"
             pullback_watch = ""
         
-        # ✅ SIGNAL STABILITY (Unchanged)
+        # ✅ SIGNAL STABILITY
         today_val = strength_map.get(signal, 0)
         prev_val = strength_map.get(prev_signal, -1)
         
@@ -172,7 +177,7 @@ def generate_ngx_signals(previous_signals=None):
         )
         
         signals.append({
-            "Ticker": ticker, "Company": company_name, "Price(₦)": round(price, 2),
+            "Ticker": ticker, "Company": company_name, "Price()": round(price, 2),
             "Signal": signal, "Strength(%)": score, "RSI_Raw": round(rsi_val, 1),
             "Trend_Days": trend_days, "SMA20_Slope": round(sma20_slope, 2),
             "Stop_Loss": round(price * 0.93, 2), "Take_Profit": round(price * 1.30, 2),
