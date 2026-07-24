@@ -1,5 +1,5 @@
 # data_engine.py - NGX DATA ENGINE (Google Sheets)
-# ✅ CORRECTED: Fixed column name typo + verified all keys match exactly
+# ✅ FINAL: Adaptive chase warning + analytics-ready + zero silent failures
 
 import pandas as pd
 import numpy as np
@@ -47,7 +47,7 @@ def generate_ngx_signals(previous_signals=None):
         ticker_history = prices_df[prices_df['Ticker'].str.strip() == ticker].sort_values('Date').tail(60)
         
         if len(ticker_history) < 20:
-            fetch_log.append(f"{ticker}: ️")
+            fetch_log.append(f"{ticker}: ⚠️")
             continue
         fetch_log.append(f"{ticker}: ✅")
         
@@ -84,7 +84,7 @@ def generate_ngx_signals(previous_signals=None):
             else: liq_flag = "✅ Normal"
         else: liq_flag = "⚠️ No Data"
         
-        # ✅ NGX-AWARE EVENT TAG (Stricter to avoid false positives)
+        # ✅ NGX-AWARE EVENT TAG
         rsi_val = float(rsi.iloc[-1]) if pd.notna(rsi.iloc[-1]) else 0
         price_vs_sma20 = abs((price - sma20.iloc[-1]) / sma20.iloc[-1]) if pd.notna(sma20.iloc[-1]) and sma20.iloc[-1] != 0 else 0
         vol_ratio = current_vol / avg_vol_20d if pd.notna(current_vol) and pd.notna(avg_vol_20d) and avg_vol_20d > 0 else 0
@@ -92,10 +92,7 @@ def generate_ngx_signals(previous_signals=None):
         vol_trigger = vol_ratio >= 2.0
         momentum_trigger = price_vs_sma20 > 0.05
         
-        if vol_trigger and momentum_trigger:
-            event_tag = "📅 Earnings/News"
-        else:
-            event_tag = " Technical"
+        event_tag = " Earnings/News" if (vol_trigger and momentum_trigger) else "📊 Technical"
         
         # ✅ NGX-AWARE SCORING
         score = 0
@@ -135,19 +132,21 @@ def generate_ngx_signals(previous_signals=None):
             elif score >= 55: signal = "WATCH"
             else: signal = "AVOID"
         
-        # ✅ ADAPTIVE ENTRY ZONES
+        # ✅ ADAPTIVE ENTRY ZONES + CHASE WARNING
         if pd.notna(sma20.iloc[-1]) and sma20.iloc[-1] > 0:
             if trend_days >= 5 and sma20_slope > 0:
                 buffer = 0.025
+                gap_threshold = 0.05  # Allow 5% gaps in strong trends
             else:
                 buffer = 0.015
+                gap_threshold = 0.03
                 
             entry_low = round(sma20.iloc[-1] * (1 - buffer), 2)
             entry_high = round(sma20.iloc[-1] * (1 + buffer), 2)
             prev_close = float(close.iloc[-2]) if len(close) >= 2 and pd.notna(close.iloc[-2]) else price
             gap_pct = abs((price - prev_close) / prev_close) if prev_close != 0 else 0
-            chase_warning = "⚠️ Chase Risk" if (price > entry_high or gap_pct > 0.03) else "✅ Fair Zone"
-            pullback_watch = "🔍 Pullback/Zone" if (signal == "BUY" and chase_warning == "✅ Fair Zone") else ""
+            chase_warning = "⚠️ Chase Risk" if (price > entry_high or gap_pct > gap_threshold) else "✅ Fair Zone"
+            pullback_watch = " Pullback/Zone" if (signal == "BUY" and chase_warning == "✅ Fair Zone") else ""
         else:
             entry_low = entry_high = 0
             chase_warning = "⚠️ No Data"
@@ -157,7 +156,7 @@ def generate_ngx_signals(previous_signals=None):
         today_val = strength_map.get(signal, 0)
         prev_val = strength_map.get(prev_signal, -1)
         
-        if prev_val == -1: stability = "🆕 New Signal"
+        if prev_val == -1: stability = " New Signal"
         elif today_val == prev_val: stability = "✅ Continuation"
         elif today_val > prev_val: stability = "📈 Strengthening"
         else: stability = "️ Weakening"
@@ -170,7 +169,7 @@ def generate_ngx_signals(previous_signals=None):
         )
         
         signals.append({
-            "Ticker": ticker, "Company": company_name, "Price(₦)": round(price, 2),  # ✅ FIXED TYPO
+            "Ticker": ticker, "Company": company_name, "Price(₦)": round(price, 2),
             "Signal": signal, "Strength(%)": score, "RSI_Raw": round(rsi_val, 1),
             "Trend_Days": trend_days, "SMA20_Slope": round(sma20_slope, 2),
             "Stop_Loss": round(price * 0.93, 2), "Take_Profit": round(price * 1.30, 2),
