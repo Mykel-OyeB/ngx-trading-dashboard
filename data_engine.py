@@ -1,5 +1,5 @@
 # data_engine.py - NGX DATA ENGINE (Google Sheets)
-# ✅ FINAL: Adaptive chase warning + analytics-ready + zero silent failures
+# ✅ FINAL: Regime-aware entry zones + trend-following logic + zero silent failures
 
 import pandas as pd
 import numpy as np
@@ -47,7 +47,7 @@ def generate_ngx_signals(previous_signals=None):
         ticker_history = prices_df[prices_df['Ticker'].str.strip() == ticker].sort_values('Date').tail(60)
         
         if len(ticker_history) < 20:
-            fetch_log.append(f"{ticker}: ⚠️")
+            fetch_log.append(f"{ticker}: ️")
             continue
         fetch_log.append(f"{ticker}: ✅")
         
@@ -80,7 +80,7 @@ def generate_ngx_signals(previous_signals=None):
         # ✅ LIQUIDITY FLAG
         if pd.notna(current_vol) and pd.notna(avg_vol_20d) and avg_vol_20d > 0:
             if current_vol < avg_vol_20d * 0.5: liq_flag = "⚠️ Low"
-            elif current_vol > avg_vol_20d * 3.0: liq_flag = "⚠️ Spike"
+            elif current_vol > avg_vol_20d * 3.0: liq_flag = "️ Spike"
             else: liq_flag = "✅ Normal"
         else: liq_flag = "⚠️ No Data"
         
@@ -91,7 +91,6 @@ def generate_ngx_signals(previous_signals=None):
         
         vol_trigger = vol_ratio >= 2.0
         momentum_trigger = price_vs_sma20 > 0.05
-        
         event_tag = " Earnings/News" if (vol_trigger and momentum_trigger) else "📊 Technical"
         
         # ✅ NGX-AWARE SCORING
@@ -132,21 +131,30 @@ def generate_ngx_signals(previous_signals=None):
             elif score >= 55: signal = "WATCH"
             else: signal = "AVOID"
         
-        # ✅ ADAPTIVE ENTRY ZONES + CHASE WARNING
+        # ✅ REGIME-AWARE ENTRY ZONES (Solves "Watch vs Chase" dilemma)
         if pd.notna(sma20.iloc[-1]) and sma20.iloc[-1] > 0:
-            if trend_days >= 5 and sma20_slope > 0:
-                buffer = 0.025
-                gap_threshold = 0.05  # Allow 5% gaps in strong trends
+            # Short-term momentum range
+            low_3d = close.rolling(3).min().iloc[-1]
+            high_3d = close.rolling(3).max().iloc[-1]
+            
+            # Detect Strong Trend Regime
+            is_strong_trend = (trend_days >= 5) and (sma20_slope > 0) and (signal == "BUY")
+            
+            if is_strong_trend:
+                # TREND-FOLLOWING MODE: Price naturally runs above SMA20. Use recent consolidation range.
+                entry_low = round(low_3d * 0.995, 2)   # 0.5% below 3-day low
+                entry_high = round(high_3d * 1.005, 2)  # 0.5% above 3-day high
+                chase_warning = "📈 Trend-Following"
+                pullback_watch = "🔍 Wait for 3D Dip"
             else:
+                # PULLBACK/EARLY MODE: Standard SMA20 buffer
                 buffer = 0.015
-                gap_threshold = 0.03
-                
-            entry_low = round(sma20.iloc[-1] * (1 - buffer), 2)
-            entry_high = round(sma20.iloc[-1] * (1 + buffer), 2)
-            prev_close = float(close.iloc[-2]) if len(close) >= 2 and pd.notna(close.iloc[-2]) else price
-            gap_pct = abs((price - prev_close) / prev_close) if prev_close != 0 else 0
-            chase_warning = "⚠️ Chase Risk" if (price > entry_high or gap_pct > gap_threshold) else "✅ Fair Zone"
-            pullback_watch = " Pullback/Zone" if (signal == "BUY" and chase_warning == "✅ Fair Zone") else ""
+                entry_low = round(sma20.iloc[-1] * (1 - buffer), 2)
+                entry_high = round(sma20.iloc[-1] * (1 + buffer), 2)
+                prev_close = float(close.iloc[-2]) if len(close) >= 2 and pd.notna(close.iloc[-2]) else price
+                gap_pct = abs((price - prev_close) / prev_close) if prev_close != 0 else 0
+                chase_warning = "⚠️ Chase Risk" if (price > entry_high or gap_pct > 0.03) else "✅ Fair Zone"
+                pullback_watch = "🔍 Pullback/Zone" if (signal == "BUY" and chase_warning == "✅ Fair Zone") else ""
         else:
             entry_low = entry_high = 0
             chase_warning = "⚠️ No Data"
@@ -156,10 +164,10 @@ def generate_ngx_signals(previous_signals=None):
         today_val = strength_map.get(signal, 0)
         prev_val = strength_map.get(prev_signal, -1)
         
-        if prev_val == -1: stability = " New Signal"
+        if prev_val == -1: stability = "🆕 New Signal"
         elif today_val == prev_val: stability = "✅ Continuation"
         elif today_val > prev_val: stability = "📈 Strengthening"
-        else: stability = "️ Weakening"
+        else: stability = "⚠️ Weakening"
         
         company_name = (
             ticker.replace("MTNN", "MTN Nigeria")
