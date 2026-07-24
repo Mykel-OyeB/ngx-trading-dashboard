@@ -167,7 +167,11 @@ with tab4:
         # Calculate metrics from STABLE model only
         buy_df = stable_df[stable_df['Signal'] == 'BUY']
         total_signals = len(stable_df)
-        buy_count = len(buy_df)
+        
+        # ✅ FIX: Count UNIQUE tickers instead of cumulative daily flags
+        unique_buy_tickers = buy_df['Ticker'].nunique() if not buy_df.empty else 0
+        cumulative_buy_flags = len(buy_df)
+        
         active_days = stable_df['Date'].nunique()
         
         # Avg Strength with hysteresis note
@@ -187,14 +191,17 @@ with tab4:
         
         stability_counts = stable_df['Signal_Stability'].value_counts().to_dict()
         event_counts = stable_df['Event_Tag'].value_counts().to_dict()
-        top_tickers = stable_df[stable_df['Signal']=='BUY']['Ticker'].value_counts().head(5) if not buy_df.empty else pd.Series()
+        top_tickers = buy_df['Ticker'].value_counts().head(5) if not buy_df.empty else pd.Series()
         
         c1,c2,c3,c4,c5 = st.columns(5)
-        c1.metric("Total Signals (Stable)", total_signals)
-        c2.metric("BUY Signals", buy_count)
+        c1.metric("Total Signals", total_signals)
+        c2.metric("Unique BUY Tickers", unique_buy_tickers)  # ✅ CHANGED FROM CUMULATIVE
         c3.metric("Avg BUY Strength", f"{avg_strength:.1f}%{strength_note}")
         c4.metric("Avg Trend Days (BUY)", avg_trend_days)
         c5.metric("Active Days", active_days)
+        
+        # ✅ EXPLANATION BOX
+        st.info(f"📊 **Metric Clarification:** 'Unique BUY Tickers' ({unique_buy_tickers}) counts distinct stocks flagged during this period. 'Cumulative BUY Flags' ({cumulative_buy_flags}) counts daily occurrences (e.g., a stock held for 3 days = 3 flags). We track Unique Tickers to avoid double-counting and measure actual opportunity flow.")
         
         # Hysteresis explanation box
         if avg_strength < 70:
@@ -203,17 +210,17 @@ with tab4:
         st.divider()
         col1, col2 = st.columns(2)
         with col1:
-            st.subheader(" Signal Stability Breakdown")
+            st.subheader("📊 Signal Stability Breakdown")
             if stability_counts:
                 stab_fig = px.bar(x=list(stability_counts.keys()), y=list(stability_counts.values()), 
                                   labels={"x":"Stability", "y":"Count"}, color_discrete_sequence=["#1f77b4"])
                 stab_fig.update_layout(showlegend=False)
                 st.plotly_chart(stab_fig, use_container_width=True)
         with col2:
-            st.subheader(" Top 5 BUY Tickers")
+            st.subheader("🏆 Top 5 BUY Tickers (Frequency)")
             if not top_tickers.empty:
                 tick_fig = px.bar(x=top_tickers.index, y=top_tickers.values,
-                                  labels={"x":"Ticker", "y":"BUY Count"}, color_discrete_sequence=["#2ca02c"])
+                                  labels={"x":"Ticker", "y":"Signal Count"}, color_discrete_sequence=["#2ca02c"])
                 tick_fig.update_layout(showlegend=False)
                 st.plotly_chart(tick_fig, use_container_width=True)
             else:
@@ -226,7 +233,7 @@ with tab4:
         else:
             st.info("No event tags in stable period yet")
             
-        st.caption(f"💡 Analytics based on signals from {STABILIZATION_DATE} onwards (post-oscillation). Trade execution metrics will appear once you log filled trades in the `Trades` tab.")
+        st.caption(f" Analytics based on signals from {STABILIZATION_DATE} onwards (post-oscillation). Trade execution metrics will appear once you log filled trades in the `Trades` tab.")
 
 with tab5:
     st.subheader("📰 Market News & Economic Data")
