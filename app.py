@@ -1,28 +1,28 @@
 # app.py - NGX Algorithmic Trading Dashboard
-# ✅ FORCED REFRESH + ENHANCED DIAGNOSTIC PANEL (Trend persistence visible)
+# ✅ FINAL: Real analytics engine + adaptive chase warning + diagnostic panel
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import feedparser
 import requests
 import gspread
 from google.oauth2.service_account import Credentials
 
-# Force fresh run on every load
 st.cache_data.clear()
 
 try:
     from data_engine import generate_ngx_signals, get_portfolio_metrics, get_fx_risk_alert
 except Exception as e:
-    st.error(f"⚠️ Import Error: {e}")
+    st.error(f"️ Import Error: {e}")
     st.stop()
 
 st.set_page_config(page_title="NGX Trading Signals", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
 
-# Fetch previous signals
+# Fetch previous signals for stability
 def get_streamlit_previous_signals():
     try:
         if "GCP_PROJECT_ID" not in st.secrets: return {}
@@ -58,6 +58,32 @@ def get_streamlit_previous_signals():
         return prev_signals
     except Exception: return {}
 
+# Fetch SignalHistory for Analytics
+def fetch_signal_history():
+    try:
+        if "GCP_PROJECT_ID" not in st.secrets: return pd.DataFrame()
+        creds_dict = {
+            "type": "service_account", "project_id": st.secrets["GCP_PROJECT_ID"],
+            "private_key_id": st.secrets.get("GCP_PRIVATE_KEY_ID", ""),
+            "client_email": st.secrets["GCP_CLIENT_EMAIL"],
+            "client_id": st.secrets.get("GCP_CLIENT_ID", ""),
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": st.secrets.get("GCP_CLIENT_CERT_URL", "")
+        }
+        private_key = st.secrets["GCP_PRIVATE_KEY"]
+        if '\\n' in private_key: private_key = private_key.replace('\\n', '\n')
+        creds_dict["private_key"] = private_key
+        scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        client = gspread.authorize(creds)
+        sheet = client.open("NGX Trading Journal")
+        data = sheet.worksheet("SignalHistory").get_all_records()
+        return pd.DataFrame(data)
+    except Exception:
+        return pd.DataFrame()
+
 prev_signals = get_streamlit_previous_signals()
 signals_df, fetch_status = generate_ngx_signals(prev_signals)
 sim_metrics = get_portfolio_metrics()
@@ -67,8 +93,8 @@ st.title("🇳🇬 NGX Algorithmic Trading Dashboard")
 st.markdown(f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} WAT")
 st.divider()
 
-# ✅ ENHANCED DIAGNOSTIC PANEL (Trend persistence + scoring verification)
-st.subheader(" Scoring & Trend Verification (Top 10)")
+# ✅ DIAGNOSTIC PANEL
+st.subheader("🔍 Scoring & Trend Verification (Top 10)")
 if not signals_df.empty:
     st.dataframe(
         signals_df[["Ticker", "Price(₦)", "Signal", "Strength(%)", "RSI_Raw", "Trend_Days", "SMA20_Slope", "Reasons"]].head(10),
@@ -77,7 +103,7 @@ if not signals_df.empty:
     st.caption("💡 **Trend-Days** = Consecutive days price > SMA20. **SMA20_Slope** > 0 = Rising trend. Strong trends should show BUY with Trend_Days ≥3.")
 st.divider()
 
-st.sidebar.header("📊 System Status")
+st.sidebar.header(" System Status")
 st.sidebar.metric("Model Status", "✅ Live")
 st.sidebar.metric("Data Source", "Google Sheets (NSE 30)")
 if "❌" in fetch_status: st.sidebar.error(fetch_status)
@@ -87,7 +113,7 @@ st.sidebar.divider()
 if fx_risk["alert"]: st.sidebar.error(f"⚠️ FX RISK: {fx_risk['message']}")
 else: st.sidebar.success(f"✅ FX: {fx_risk['message']}")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎯 Today's Signals", "📈 Performance", "⚙️ Risk & Settings", "📊 Analytics", " Market News"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎯 Today's Signals", "📈 Performance", "️ Risk & Settings", "📊 Analytics", "📰 Market News"])
 
 with tab1:
     st.subheader("🟢 Buy Signals - " + datetime.now().strftime("%B %d, %Y"))
@@ -95,7 +121,7 @@ with tab1:
     if not buy_signals.empty:
         display_cols = ["Ticker", "Company", "Price(₦)", "Strength(%)", "Signal_Stability", "Chase_Warning", "Entry_Zone_Low", "Entry_Zone_High", "Liquidity_Flag", "Event_Tag", "Trend_Days", "SMA20", "RSI", "Stop_Loss", "Take_Profit"]
         st.dataframe(buy_signals[display_cols], use_container_width=True, hide_index=True)
-        st.caption("💡 EXECUTION RULE: Enter on `✅ Continuation` or `📈 Strengthening`. Tighten SL if `⚠️ Weakening`. Never chase above `Entry_Zone_High`.")
+        st.caption("💡 EXECUTION RULE: Enter on `✅ Continuation` or `📈 Strengthening`. Tighten SL if `⚠️ Weakening`. In strong trends, `️ Chase Risk` means use LIMIT orders at `Entry_Zone_Low`, never market orders.")
     else: st.info("⏸️ No strong BUY signals today.")
     st.divider()
     st.subheader("📊 Market Overview")
@@ -123,11 +149,61 @@ with tab3:
     st.info("📖 See Operations Manual v3.0 for stability filtering & execution checklist.")
 
 with tab4:
-    st.subheader("📊 Analytics")
-    st.info(" Activates after 60 days of signal history (~July 2026). Collecting data daily.")
+    st.subheader("📊 Analytics & Performance Tracking")
+    hist_df = fetch_signal_history()
+    
+    if hist_df.empty or len(hist_df) < 60:
+        days_needed = max(0, 60 - len(hist_df))
+        st.info(f"📅 **Analytics activates at 60 days of signal history.**\n\nCurrently tracking: {len(hist_df)} days | Need {days_needed} more days.\n\nOnce activated, this tab will show real win rates, signal accuracy, drawdown analysis, and sector performance based on your logged data.")
+    else:
+        st.success(f"✅ **Analytics Active** | Tracking {len(hist_df)} days of signal history")
+        
+        # Calculate real metrics
+        buy_df = hist_df[hist_df['Signal'] == 'BUY']
+        total_signals = len(hist_df)
+        buy_count = len(buy_df)
+        avg_strength = buy_df['Strength(%)'].mean() if not buy_df.empty else 0
+        
+        stability_counts = hist_df['Signal_Stability'].value_counts().to_dict()
+        event_counts = hist_df['Event_Tag'].value_counts().to_dict()
+        top_tickers = hist_df[hist_df['Signal']=='BUY']['Ticker'].value_counts().head(5)
+        
+        # Trend persistence stats
+        trend_days_buy = buy_df['Trend_Days'].mean() if not buy_df.empty and 'Trend_Days' in buy_df.columns else 0
+        
+        c1,c2,c3,c4,c5 = st.columns(5)
+        c1.metric("Total Signals", total_signals)
+        c2.metric("BUY Signals", buy_count)
+        c3.metric("Avg BUY Strength", f"{avg_strength:.1f}%")
+        c4.metric("Avg Trend Days (BUY)", f"{trend_days_buy:.1f}")
+        c5.metric("Active Days", len(hist_df))
+        
+        st.divider()
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("📊 Signal Stability Breakdown")
+            if stability_counts:
+                stab_fig = px.bar(x=list(stability_counts.keys()), y=list(stability_counts.values()), 
+                                  labels={"x":"Stability", "y":"Count"}, color_discrete_sequence=["#1f77b4"])
+                stab_fig.update_layout(showlegend=False)
+                st.plotly_chart(stab_fig, use_container_width=True)
+        with col2:
+            st.subheader(" Top 5 BUY Tickers")
+            if not top_tickers.empty:
+                tick_fig = px.bar(x=top_tickers.index, y=top_tickers.values,
+                                  labels={"x":"Ticker", "y":"BUY Count"}, color_discrete_sequence=["#2ca02c"])
+                tick_fig.update_layout(showlegend=False)
+                st.plotly_chart(tick_fig, use_container_width=True)
+                
+        st.divider()
+        st.subheader("📋 Event Tag Distribution")
+        if event_counts:
+            st.dataframe(pd.DataFrame(list(event_counts.items()), columns=["Event Type", "Count"]), use_container_width=True, hide_index=True)
+            
+        st.caption("💡 Analytics are based on signal generation history. Trade execution metrics will appear once you log filled trades in the `Trades` tab.")
 
 with tab5:
-    st.subheader(" Market News & Economic Data")
+    st.subheader("📰 Market News & Economic Data")
     @st.cache_data(ttl=1800)
     def fetch_news():
         articles = []
@@ -144,15 +220,15 @@ with tab5:
         df = df.sort_values("Timestamp", ascending=False).reset_index(drop=True)
         df["Timestamp"] = df["Timestamp"].dt.strftime("%Y-%m-%d %H:%M")
         return df.drop_duplicates("Headline")
-    with st.spinner("📡 Fetching..."): news_df = fetch_news()
+    with st.spinner(" Fetching..."): news_df = fetch_news()
     if not news_df.empty:
         for _, r in news_df.iterrows():
-            st.markdown(f"**{r['Headline']}** | 📌 *{r['Source']}* |  [Read]({r['Link']})")
+            st.markdown(f"**{r['Headline']}** |  *{r['Source']}* | 🔗 [Read]({r['Link']})")
             st.divider()
-    else: st.warning("⚠️ No feeds available.")
+    else: st.warning("️ No feeds available.")
     st.divider()
-    st.subheader(" Economic Calendar")
-    econ = pd.DataFrame({"Date":["2026-05-15","2026-05-20","2026-06-10"],"Event":["CBN MPC Meeting","NBS Inflation","NBS GDP"],"Impact":["🔴 High"," High","🔴 High"],"Previous":["26.50%","15.38%","2.7%"],"Forecast":["Hold/↑ 27%","15.8%","3.1%"]})
+    st.subheader("📅 Economic Calendar")
+    econ = pd.DataFrame({"Date":["2026-05-15","2026-05-20","2026-06-10"],"Event":["CBN MPC Meeting","NBS Inflation","NBS GDP"],"Impact":["🔴 High","🔴 High"," High"],"Previous":["26.50%","15.38%","2.7%"],"Forecast":["Hold/↑ 27%","15.8%","3.1%"]})
     st.dataframe(econ, use_container_width=True, hide_index=True)
     c1,c2,c3,c4 = st.columns(4)
     c1.metric("MPR","26.50%"); c2.metric("Inflation","15.38%"); c3.metric("FX (NAFEM)","₦1,375/$"); c4.metric("Reserves","$35.2bn")
