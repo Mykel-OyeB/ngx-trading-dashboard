@@ -1,5 +1,5 @@
 # app.py - NGX Algorithmic Trading Dashboard
-# ✅ FINAL: Fixed analytics bugs + hysteresis clarity + all previous features intact
+# ✅ FINAL: Analytics filtered to post-stabilization period (July 22, 2026+)
 
 import streamlit as st
 import pandas as pd
@@ -19,7 +19,7 @@ except Exception as e:
     st.error(f"⚠️ Import Error: {e}")
     st.stop()
 
-st.set_page_config(page_title="NGX Trading Signals", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="NGX Trading Signals", page_icon="", layout="wide", initial_sidebar_state="expanded")
 
 # Fetch previous signals for stability
 def get_streamlit_previous_signals():
@@ -93,13 +93,13 @@ st.markdown(f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} W
 st.divider()
 
 # ✅ DIAGNOSTIC PANEL
-st.subheader(" Scoring & Trend Verification (Top 10)")
+st.subheader("🔍 Scoring & Trend Verification (Top 10)")
 if not signals_df.empty:
     st.dataframe(
         signals_df[["Ticker", "Price(₦)", "Signal", "Strength(%)", "RSI_Raw", "Trend_Days", "SMA20_Slope", "Reasons"]].head(10),
         use_container_width=True, hide_index=True
     )
-    st.caption(" **Trend-Days** = Consecutive days price > SMA20. **SMA20_Slope** > 0 = Rising trend. Strong trends should show BUY with Trend_Days ≥3.")
+    st.caption("💡 **Trend-Days** = Consecutive days price > SMA20. **SMA20_Slope** > 0 = Rising trend. Strong trends should show BUY with Trend_Days ≥3.")
 st.divider()
 
 st.sidebar.header("📊 System Status")
@@ -112,7 +112,7 @@ st.sidebar.divider()
 if fx_risk["alert"]: st.sidebar.error(f"⚠️ FX RISK: {fx_risk['message']}")
 else: st.sidebar.success(f"✅ FX: {fx_risk['message']}")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎯 Today's Signals", " Performance", "⚙️ Risk & Settings", "📊 Analytics", "📰 Market News"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎯 Today's Signals", "📈 Performance", "⚙️ Risk & Settings", "📊 Analytics", " Market News"])
 
 with tab1:
     st.subheader("🟢 Buy Signals - " + datetime.now().strftime("%B %d, %Y"))
@@ -120,16 +120,16 @@ with tab1:
     if not buy_signals.empty:
         display_cols = ["Ticker", "Company", "Price(₦)", "Strength(%)", "Signal_Stability", "Chase_Warning", "Entry_Zone_Low", "Entry_Zone_High", "Liquidity_Flag", "Event_Tag", "Trend_Days", "SMA20", "RSI", "Stop_Loss", "Take_Profit"]
         st.dataframe(buy_signals[display_cols], use_container_width=True, hide_index=True)
-        st.caption(" EXECUTION RULE: Enter on `✅ Continuation` or `📈 Strengthening`. Tighten SL if `⚠️ Weakening`. In strong trends, `⚠️ Chase Risk` means use LIMIT orders at `Entry_Zone_Low`, never market orders.")
-    else: st.info("️ No strong BUY signals today.")
+        st.caption("💡 EXECUTION RULE: Enter on `✅ Continuation` or `📈 Strengthening`. Tighten SL if `⚠️ Weakening`. In strong trends, `⚠️ Chase Risk` means use LIMIT orders at `Entry_Zone_Low`, never market orders.")
+    else: st.info("⏸️ No strong BUY signals today.")
     st.divider()
-    st.subheader(" Market Overview")
+    st.subheader("📊 Market Overview")
     if not signals_df.empty:
         st.dataframe(signals_df[["Ticker", "Company", "Price(₦)", "Signal", "Strength(%)", "Signal_Stability", "Trend_Days", "Chase_Warning", "Entry_Zone_Low", "Entry_Zone_High", "Liquidity_Flag", "Event_Tag", "Reasons"]], use_container_width=True, hide_index=True)
     else: st.warning("No data available.")
 
 with tab2:
-    st.subheader(" Strategy Equity Curve (Simulated)")
+    st.subheader("📊 Strategy Equity Curve (Simulated)")
     dates = pd.date_range(start="2023-01-01", periods=100, freq="B")
     np.random.seed(42)
     strat = np.cumprod(1 + np.random.normal(0.0006, 0.015, 100))
@@ -151,67 +151,82 @@ with tab4:
     st.subheader("📊 Analytics & Performance Tracking")
     hist_df = fetch_signal_history()
     
-    if hist_df.empty or len(hist_df) < 60:
-        days_needed = max(0, 60 - len(hist_df))
-        st.info(f"📅 **Analytics activates at 60 days of signal history.**\n\nCurrently tracking: {len(hist_df)} records | Need {days_needed} more days.\n\nOnce activated, this tab will show real win rates, signal accuracy, drawdown analysis, and sector performance based on your logged data.")
+    # ✅ FILTER: Only count signals from model stabilization date (July 22, 2026)
+    STABILIZATION_DATE = "2026-07-22"
+    if not hist_df.empty and 'Date' in hist_df.columns:
+        hist_df['Date'] = pd.to_datetime(hist_df['Date']).dt.strftime('%Y-%m-%d')
+        stable_df = hist_df[hist_df['Date'] >= STABILIZATION_DATE].copy()
     else:
-        st.success(f"✅ **Analytics Active** | Tracking {len(hist_df)} signal records across {hist_df['Date'].nunique()} trading days")
+        stable_df = hist_df.copy()
+    
+    if stable_df.empty or len(stable_df) < 3:
+        st.info(f"📅 **Analytics require post-stabilization data (from {STABILIZATION_DATE}).**\n\nCurrently tracking: {len(stable_df)} stable records.\n\nAnalytics will populate as you continue daily runs.")
+    else:
+        st.success(f"✅ **Analytics Active** | Tracking {len(stable_df)} signals across {stable_df['Date'].nunique()} days (from {STABILIZATION_DATE})")
         
-        # ✅ FIX: Proper metric calculations
-        buy_df = hist_df[hist_df['Signal'] == 'BUY']
-        total_signals = len(hist_df)
+        # Calculate metrics from STABLE model only
+        buy_df = stable_df[stable_df['Signal'] == 'BUY']
+        total_signals = len(stable_df)
         buy_count = len(buy_df)
-        active_days = hist_df['Date'].nunique()
+        active_days = stable_df['Date'].nunique()
         
         # Avg Strength with hysteresis note
-        avg_strength = buy_df['Strength(%)'].astype(float).mean() if not buy_df.empty else 0
-        strength_note = " ️ (Includes state-lock hysteresis buffers 65-69%)" if avg_strength < 70 else ""
+        if not buy_df.empty and 'Strength(%)' in buy_df.columns:
+            avg_strength = buy_df['Strength(%)'].astype(float).mean()
+            strength_note = " ⚠️ (Includes state-lock hysteresis buffers 65-69%)" if avg_strength < 70 else ""
+        else:
+            avg_strength = 0
+            strength_note = ""
         
-        # ✅ FIX: Safe Trend_Days calculation (handles missing/old data)
+        # Safe Trend_Days calculation
         if 'Trend_Days' in buy_df.columns:
             trend_valid = pd.to_numeric(buy_df['Trend_Days'], errors='coerce').dropna()
             avg_trend_days = f"{trend_valid.mean():.1f}" if not trend_valid.empty else "N/A (New column)"
         else:
             avg_trend_days = "N/A (Column added recently)"
         
-        stability_counts = hist_df['Signal_Stability'].value_counts().to_dict()
-        event_counts = hist_df['Event_Tag'].value_counts().to_dict()
-        top_tickers = hist_df[hist_df['Signal']=='BUY']['Ticker'].value_counts().head(5)
+        stability_counts = stable_df['Signal_Stability'].value_counts().to_dict()
+        event_counts = stable_df['Event_Tag'].value_counts().to_dict()
+        top_tickers = stable_df[stable_df['Signal']=='BUY']['Ticker'].value_counts().head(5) if not buy_df.empty else pd.Series()
         
         c1,c2,c3,c4,c5 = st.columns(5)
-        c1.metric("Total Signals", total_signals)
+        c1.metric("Total Signals (Stable)", total_signals)
         c2.metric("BUY Signals", buy_count)
         c3.metric("Avg BUY Strength", f"{avg_strength:.1f}%{strength_note}")
         c4.metric("Avg Trend Days (BUY)", avg_trend_days)
         c5.metric("Active Days", active_days)
         
-        # ✅ Hysteresis explanation box
+        # Hysteresis explanation box
         if avg_strength < 70:
             st.info("🔍 **Why Avg Strength < 70%?** State-lock hysteresis keeps BUY signals active (65-69%) to prevent daily oscillation. This is intentional for NGX volatility. Only signals ≥70% trigger fresh BUY entries.")
         
         st.divider()
         col1, col2 = st.columns(2)
         with col1:
-            st.subheader("📊 Signal Stability Breakdown")
+            st.subheader(" Signal Stability Breakdown")
             if stability_counts:
                 stab_fig = px.bar(x=list(stability_counts.keys()), y=list(stability_counts.values()), 
                                   labels={"x":"Stability", "y":"Count"}, color_discrete_sequence=["#1f77b4"])
                 stab_fig.update_layout(showlegend=False)
                 st.plotly_chart(stab_fig, use_container_width=True)
         with col2:
-            st.subheader("🏆 Top 5 BUY Tickers")
+            st.subheader(" Top 5 BUY Tickers")
             if not top_tickers.empty:
                 tick_fig = px.bar(x=top_tickers.index, y=top_tickers.values,
                                   labels={"x":"Ticker", "y":"BUY Count"}, color_discrete_sequence=["#2ca02c"])
                 tick_fig.update_layout(showlegend=False)
                 st.plotly_chart(tick_fig, use_container_width=True)
+            else:
+                st.info("No BUY signals in stable period yet")
                 
         st.divider()
         st.subheader("📋 Event Tag Distribution")
         if event_counts:
             st.dataframe(pd.DataFrame(list(event_counts.items()), columns=["Event Type", "Count"]), use_container_width=True, hide_index=True)
+        else:
+            st.info("No event tags in stable period yet")
             
-        st.caption("💡 Analytics are based on signal generation history. Trade execution metrics will appear once you log filled trades in the `Trades` tab.")
+        st.caption(f"💡 Analytics based on signals from {STABILIZATION_DATE} onwards (post-oscillation). Trade execution metrics will appear once you log filled trades in the `Trades` tab.")
 
 with tab5:
     st.subheader("📰 Market News & Economic Data")
@@ -239,7 +254,7 @@ with tab5:
     else: st.warning("⚠️ No feeds available.")
     st.divider()
     st.subheader("📅 Economic Calendar")
-    econ = pd.DataFrame({"Date":["2026-05-15","2026-05-20","2026-06-10"],"Event":["CBN MPC Meeting","NBS Inflation","NBS GDP"],"Impact":["🔴 High","🔴 High","🔴 High"],"Previous":["26.50%","15.38%","2.7%"],"Forecast":["Hold/↑ 27%","15.8%","3.1%"]})
+    econ = pd.DataFrame({"Date":["2026-05-15","2026-05-20","2026-06-10"],"Event":["CBN MPC Meeting","NBS Inflation","NBS GDP"],"Impact":[" High","🔴 High","🔴 High"],"Previous":["26.50%","15.38%","2.7%"],"Forecast":["Hold/↑ 27%","15.8%","3.1%"]})
     st.dataframe(econ, use_container_width=True, hide_index=True)
     c1,c2,c3,c4 = st.columns(4)
     c1.metric("MPR","26.50%"); c2.metric("Inflation","15.38%"); c3.metric("FX (NAFEM)","₦1,375/$"); c4.metric("Reserves","$35.2bn")
