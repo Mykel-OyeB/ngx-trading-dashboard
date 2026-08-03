@@ -1,5 +1,5 @@
 # data_engine.py - NGX DATA ENGINE (Google Sheets)
-# ✅ FINAL: Regime-aware entry zones + trend-following logic + zero silent failures
+# ✅ FINAL: Regime-aware zones, state-lock hysteresis, drawdown alerts, zero silent failures
 
 import pandas as pd
 import numpy as np
@@ -47,7 +47,7 @@ def generate_ngx_signals(previous_signals=None):
         ticker_history = prices_df[prices_df['Ticker'].str.strip() == ticker].sort_values('Date').tail(60)
         
         if len(ticker_history) < 20:
-            fetch_log.append(f"{ticker}: ️")
+            fetch_log.append(f"{ticker}: ⚠️")
             continue
         fetch_log.append(f"{ticker}: ✅")
         
@@ -131,34 +131,40 @@ def generate_ngx_signals(previous_signals=None):
             elif score >= 55: signal = "WATCH"
             else: signal = "AVOID"
         
-        # ✅ REGIME-AWARE ENTRY ZONES (Solves "Watch vs Chase" dilemma)
+        # ✅ REGIME-AWARE ENTRY ZONES
         if pd.notna(sma20.iloc[-1]) and sma20.iloc[-1] > 0:
-            # Short-term momentum range
             low_3d = close.rolling(3).min().iloc[-1]
             high_3d = close.rolling(3).max().iloc[-1]
             
-            # Detect Strong Trend Regime
             is_strong_trend = (trend_days >= 5) and (sma20_slope > 0) and (signal == "BUY")
             
             if is_strong_trend:
-                # TREND-FOLLOWING MODE: Price naturally runs above SMA20. Use recent consolidation range.
-                entry_low = round(low_3d * 0.995, 2)   # 0.5% below 3-day low
-                entry_high = round(high_3d * 1.005, 2)  # 0.5% above 3-day high
+                entry_low = round(low_3d * 0.995, 2)
+                entry_high = round(high_3d * 1.005, 2)
                 chase_warning = "📈 Trend-Following"
-                pullback_watch = "🔍 Wait for 3D Dip"
+                pullback_watch = " Wait for 3D Dip"
             else:
-                # PULLBACK/EARLY MODE: Standard SMA20 buffer
                 buffer = 0.015
                 entry_low = round(sma20.iloc[-1] * (1 - buffer), 2)
                 entry_high = round(sma20.iloc[-1] * (1 + buffer), 2)
                 prev_close = float(close.iloc[-2]) if len(close) >= 2 and pd.notna(close.iloc[-2]) else price
                 gap_pct = abs((price - prev_close) / prev_close) if prev_close != 0 else 0
-                chase_warning = "⚠️ Chase Risk" if (price > entry_high or gap_pct > 0.03) else "✅ Fair Zone"
-                pullback_watch = "🔍 Pullback/Zone" if (signal == "BUY" and chase_warning == "✅ Fair Zone") else ""
+                chase_warning = "️ Chase Risk" if (price > entry_high or gap_pct > 0.03) else "✅ Fair Zone"
+                pullback_watch = " Pullback/Zone" if (signal == "BUY" and chase_warning == "✅ Fair Zone") else ""
         else:
             entry_low = entry_high = 0
             chase_warning = "⚠️ No Data"
             pullback_watch = ""
+        
+        # ✅ DRAWDOWN ALERT
+        ref_price = entry_high if entry_high > 0 else price
+        drawdown_pct = (price - ref_price) / ref_price if ref_price != 0 else 0
+        if drawdown_pct < -0.07:
+            drawdown_alert = f"⚠️ -{abs(drawdown_pct)*100:.1f}% from entry zone"
+        elif drawdown_pct > 0.03:
+            drawdown_alert = f" +{drawdown_pct*100:.1f}% from entry zone"
+        else:
+            drawdown_alert = "✅ Within Range"
         
         # ✅ SIGNAL STABILITY
         today_val = strength_map.get(signal, 0)
@@ -187,7 +193,7 @@ def generate_ngx_signals(previous_signals=None):
             "MACD_Hist": round(float(macd_hist.iloc[-1]), 4), "Liquidity_Flag": liq_flag,
             "Event_Tag": event_tag, "Entry_Zone_Low": entry_low, "Entry_Zone_High": entry_high,
             "Chase_Warning": chase_warning, "Pullback_Watch": pullback_watch,
-            "Signal_Stability": stability
+            "Signal_Stability": stability, "Drawdown_Alert": drawdown_alert
         })
         
     df_signals = pd.DataFrame(signals)
@@ -196,7 +202,7 @@ def generate_ngx_signals(previous_signals=None):
         "Stop_Loss", "Take_Profit", "Potential_Return_%", "Date", "Reasons",
         "SMA20", "SMA50", "RSI", "MACD_Hist", "Liquidity_Flag", "Event_Tag",
         "Entry_Zone_Low", "Entry_Zone_High", "Chase_Warning", "Pullback_Watch",
-        "Signal_Stability"
+        "Signal_Stability", "Drawdown_Alert"
     ]
     status_msg = f"✅ {len(signals)}/{len(latest_prices)} analyzed. " + " | ".join(fetch_log[:10])
     if df_signals.empty: return pd.DataFrame(columns=expected_cols), status_msg
